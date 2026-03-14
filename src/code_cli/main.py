@@ -134,7 +134,9 @@ def handle_tool_use(response) -> list[dict]:
                 lines = output.split("\n")
                 if len(lines) > max_lines:
                     shown = "\n".join(lines[:max_lines])
-                    console.print(f"[dim]{escape(shown)}\n... ({len(lines) - max_lines} more lines)[/dim]")
+                    console.print(
+                        f"[dim]{escape(shown)}\n... ({len(lines) - max_lines} more lines)[/dim]"
+                    )
                 else:
                     console.print(f"[dim]{escape(output)}[/dim]")
 
