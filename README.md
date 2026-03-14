@@ -1,34 +1,101 @@
-# AI CLI
+# Code CLI
 
 AI Coding Assistant CLI powered by Claude API.
 
-## Cài đặt
+## Features
+
+- Interact with Claude API via CLI
+- Use tools to read, write, and edit files
+- Run shell commands directly
+- Web search and URL content fetching
+- Conversation history saved automatically
+- Proxy support with custom base_url + auth_token
+- Automatic token cost calculation
+
+## Installation
 
 ```bash
+# Clone repo and install
 pip install -e .
 ```
 
-## Cấu hình
+## Configuration
+
+Copy `.env.example` to `.env` and fill in your credentials:
 
 ```bash
-# Cách 1: Sử dụng API key
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Cách 2: Sử dụng base_url + auth_token (proxy)
-export ANTHROPIC_BASE_URL="https://your-proxy.com"
-export ANTHROPIC_AUTH_TOKEN="your-token"
+cp .env.example .env
 ```
 
-## Chạy
+```bash
+# Option 1: Direct API Key
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Option 2: Proxy (base_url + auth_token)
+ANTHROPIC_BASE_URL=https://your-proxy.com
+ANTHROPIC_AUTH_TOKEN=your-token
+```
+
+## Usage
 
 ```bash
-ai-cli
-# hoặc
-python -m ai_cli.main
+# Run CLI
+code
+
+# Or run directly with Python
+python -m code_cli.main
 ```
 
 ## Commands
 
-- `/help` - Hiển thị help
-- `/clear` - Xóa conversation history
-- `/quit` - Thoát
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help |
+| `/clear` | Clear conversation history |
+| `/quit` | Exit |
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read file contents |
+| `write_file` | Write content to file |
+| `edit_file` | Edit file contents |
+| `bash` | Run shell commands |
+| `grep` | Search file contents |
+| `glob` | Find files by pattern |
+| `web_search` | Search the web |
+| `web_fetch` | Fetch URL content |
+
+## Token Usage
+
+The CLI displays token information after each response:
+- Input/output token count
+- Cache tokens (if any)
+- Estimated cost (USD)
+- HTTP status code
+
+## Development
+
+Install dev dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Format and lint with [Ruff](https://docs.astral.sh/ruff/):
+
+```bash
+# Format code
+ruff format .
+
+# Lint
+ruff check .
+
+# Lint and auto-fix
+ruff check --fix .
+```
+
+## License
+
+MIT License

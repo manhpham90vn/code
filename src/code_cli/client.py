@@ -1,9 +1,9 @@
-from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 import httpx
 from anthropic import Anthropic
+from anthropic.lib.streaming import MessageStream
 from anthropic.types import Message
 
 T = TypeVar("T")
@@ -92,13 +92,37 @@ class ClaudeClient:
         tools: list[dict],
         system: str | None = None,
         max_tokens: int = 4096,
-    ) -> Generator[str, None, None]:
-        """Stream a response from Claude, yielding text chunks."""
-        stream = self.client.messages.stream(
+    ) -> MessageStream:
+        """Stream a response from Claude. Use as context manager.
+
+        Usage:
+            with client.stream_message(...) as stream:
+                for event in stream:
+                    if event.type == "text":
+                        print(event.text, end="", flush=True)
+                response = stream.get_final_message()
+        """
+        sys_blocks = None
+        if system:
+            sys_blocks = [
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+
+        cached_tools = list(tools)
+        if cached_tools:
+            cached_tools[-1] = {
+                **cached_tools[-1],
+                "cache_control": {"type": "ephemeral"},
+            }
+
+        return self.client.messages.stream(
             model=self.model,
             max_tokens=max_tokens,
-            system=system,
+            system=sys_blocks,
             messages=messages,
-            tools=tools,
+            tools=cached_tools,
         )
-        yield from stream.text_stream

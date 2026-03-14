@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 
 from dotenv import load_dotenv
@@ -8,7 +9,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
-from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 from rich.theme import Theme
 
@@ -30,6 +31,40 @@ custom_theme = Theme(
 console = Console(theme=custom_theme)
 
 
+def get_staged_diff() -> str:
+    """Stage all changes and return the diff for AI to review."""
+    subprocess.run(["git", "add", "-A"], check=True, capture_output=True, text=True)
+
+    status = subprocess.run(
+        ["git", "diff", "--cached", "--name-status"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if not status.stdout.strip():
+        return ""
+
+    stat = subprocess.run(
+        ["git", "diff", "--cached", "--stat"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    diff = subprocess.run(
+        ["git", "diff", "--cached"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    diff_text = diff.stdout
+    max_len = 8000
+    if len(diff_text) > max_len:
+        diff_text = diff_text[:max_len] + "\n... (truncated)"
+
+    return f"Staged files:\n{status.stdout}\nStats:\n{stat.stdout}\nDiff:\n{diff_text}"
+
+
 def print_welcome():
     """Print the welcome banner."""
     console.print(
@@ -49,6 +84,7 @@ def print_help():
             "[bold]Commands:[/bold]\n"
             "/help   - Show help\n"
             "/clear  - Clear conversation history\n"
+            "/commit - AI-generated commit message\n"
             "/quit   - Exit\n\n"
             "[bold]Tools:[/bold]\n"
             "- read - Read files\n"
@@ -62,13 +98,6 @@ def print_help():
             border_style="green",
         )
     )
-
-
-def handle_thinking(response):
-    """Display thinking blocks from the response, if any."""
-    for block in response.content:
-        if block.type == "thinking":
-            console.print(f"[dim italic]🤔 {block.thinking}[/dim italic]")
 
 
 def handle_tool_use(response) -> list[dict]:
@@ -98,6 +127,17 @@ def handle_tool_use(response) -> list[dict]:
             except Exception as e:
                 result = f"Error: {str(e)}"
 
+            # Show tool output to user
+            output = str(result).strip()
+            if output:
+                max_lines = 30
+                lines = output.split("\n")
+                if len(lines) > max_lines:
+                    shown = "\n".join(lines[:max_lines])
+                    console.print(f"[dim]{escape(shown)}\n... ({len(lines) - max_lines} more lines)[/dim]")
+                else:
+                    console.print(f"[dim]{escape(output)}[/dim]")
+
             tool_results.append(
                 {
                     "type": "tool_result",
@@ -109,15 +149,8 @@ def handle_tool_use(response) -> list[dict]:
     return tool_results
 
 
-def handle_text_response(response):
-    """Render text blocks from the response as markdown."""
-    for block in response.content:
-        if block.type == "text":
-            console.print(Markdown(block.text))
-
-
-def log_token_usage(response, status_code: int | None = None):
-    """Log token usage, estimated cost, and HTTP status code."""
+def log_token_usage(response):
+    """Log token usage and estimated cost."""
     usage = response.usage
     input_tokens = usage.input_tokens
     output_tokens = usage.output_tokens
@@ -138,10 +171,41 @@ def log_token_usage(response, status_code: int | None = None):
     if cache_create or cache_read:
         parts.append(f"cache: {cache_create} write / {cache_read} read")
     parts.append(f"${total_cost:.4f}")
-    if status_code:
-        parts.append(f"HTTP {status_code}")
 
     console.print(f"[dim]📊 {' | '.join(parts)}[/dim]")
+
+
+def stream_response(client, context, tools) -> object:
+    """Stream a response from Claude, displaying text and thinking in real-time.
+
+    Returns the final Message object for further processing (tool_use, etc.).
+    """
+    has_text = False
+    in_thinking = False
+    with client.stream_message(
+        messages=context.messages,
+        tools=tools,
+        system=context.system_prompt,
+    ) as stream:
+        for event in stream:
+            if event.type == "thinking":
+                if not in_thinking:
+                    print("🤔 ", end="", flush=True)
+                    in_thinking = True
+                print(event.thinking, end="", flush=True)
+            elif event.type == "text":
+                if in_thinking:
+                    print()  # newline after thinking
+                    in_thinking = False
+                print(event.text, end="", flush=True)
+                has_text = True
+
+        if in_thinking:
+            pass  # No closing tag needed
+        if has_text:
+            print()  # newline after streamed text
+
+        return stream.get_final_message()
 
 
 def chat_loop(client: ClaudeClient, context: Context):
@@ -171,6 +235,57 @@ def chat_loop(client: ClaudeClient, context: Context):
                     continue
                 elif cmd in ["/quit", "/exit"]:
                     break
+                elif cmd == "/commit":
+                    try:
+                        diff = get_staged_diff()
+                        if not diff:
+                            console.print("[warning]No changes to commit.[/warning]")
+                            continue
+                        console.print(f"[dim]{diff.split(chr(10))[0]}[/dim]")
+                        # Ask AI to generate commit message only (no tool call)
+                        user_input = (
+                            "Here is the git diff of staged changes:\n\n"
+                            f"{diff}\n\n"
+                            "Generate a single-line commit message in "
+                            "Conventional Commits format "
+                            "(e.g. feat(scope): ..., fix: ..., refactor: ...). "
+                            "Reply with ONLY the commit message, nothing else."
+                        )
+                        context.add_user_message(user_input)
+                        response = stream_response(client, context, [])
+                        log_token_usage(response)
+
+                        # Extract commit message from response
+                        commit_msg = ""
+                        for block in response.content:
+                            if hasattr(block, "text"):
+                                commit_msg = block.text.strip()
+                                break
+
+                        if not commit_msg:
+                            console.print("[error]Failed to generate commit message.[/error]")
+                            continue
+
+                        context.add_assistant_message([c.model_dump() for c in response.content])
+
+                        # Execute git commit
+                        result = subprocess.run(
+                            ["git", "commit", "-m", commit_msg],
+                            capture_output=True,
+                            text=True,
+                        )
+                        if result.returncode == 0:
+                            short_hash = subprocess.run(
+                                ["git", "rev-parse", "--short", "HEAD"],
+                                capture_output=True,
+                                text=True,
+                            ).stdout.strip()
+                            console.print(f"[success]✅ {short_hash} {commit_msg}[/success]")
+                        else:
+                            console.print(f"[error]{escape(result.stderr)}[/error]")
+                    except Exception as e:
+                        console.print(f"[error]Commit failed: {escape(str(e))}[/error]")
+                    continue
                 else:
                     console.print(f"[error]Unknown command: {cmd}[/error]")
                     continue
@@ -183,19 +298,11 @@ def chat_loop(client: ClaudeClient, context: Context):
 
             # Call the API
             try:
-                api_response = client.send_message(
-                    messages=context.messages,
-                    tools=tools,
-                    system=context.system_prompt,
-                )
-                response = api_response.data
-                log_token_usage(response, api_response.status_code)
+                response = stream_response(client, context, tools)
+                log_token_usage(response)
 
                 # Process tool-use loop
                 while response.stop_reason == "tool_use":
-                    # Display thinking before running tools
-                    handle_thinking(response)
-
                     # Append assistant message (contains tool_use blocks)
                     context.add_assistant_message([c.model_dump() for c in response.content])
 
@@ -206,19 +313,8 @@ def chat_loop(client: ClaudeClient, context: Context):
                     context.add_tool_results(tool_results)
 
                     # Send tool results back to the API
-                    api_response = client.send_message(
-                        messages=context.messages,
-                        tools=tools,
-                        system=context.system_prompt,
-                    )
-                    response = api_response.data
-                    log_token_usage(response, api_response.status_code)
-
-                # Display final thinking
-                handle_thinking(response)
-
-                # Render text response
-                handle_text_response(response)
+                    response = stream_response(client, context, tools)
+                    log_token_usage(response)
 
                 # Save assistant response to context
                 context.add_assistant_message([c.model_dump() for c in response.content])
@@ -226,8 +322,8 @@ def chat_loop(client: ClaudeClient, context: Context):
             except Exception as e:
                 import traceback
 
-                console.print(f"[error]Error: {str(e)}[/error]")
-                console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                console.print(f"[error]Error: {escape(str(e))}[/error]")
+                console.print(f"[dim]{escape(traceback.format_exc())}[/dim]")
 
         except KeyboardInterrupt:
             console.print("\n[dim]Ctrl+C — Type /quit to exit[/dim]")
@@ -250,7 +346,7 @@ def main():
             auth_token=os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY"),
         )
     except Exception as e:
-        console.print(f"[error]Failed to initialize client: {e}[/error]")
+        console.print(f"[error]Failed to initialize client: {escape(str(e))}[/error]")
         console.print(
             "[dim]Set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL[/dim]"
         )
