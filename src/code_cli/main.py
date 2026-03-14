@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 
+from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
@@ -15,7 +16,7 @@ from .client import ClaudeClient
 from .context import Context
 from .tools import execute_tool, get_all_tools
 
-# Custom theme cho terminal
+# Terminal theme
 custom_theme = Theme(
     {
         "info": "cyan",
@@ -30,53 +31,53 @@ console = Console(theme=custom_theme)
 
 
 def print_welcome():
-    """In welcome message."""
+    """Print the welcome banner."""
     console.print(
         Panel.fit(
             "[bold cyan]AI Coding Assistant CLI[/bold cyan]\n"
             "Powered by Claude API\n\n"
-            "[dim]Gõ /help để xem các lệnh có sẵn[/dim]",
+            "[dim]Type /help to see available commands[/dim]",
             border_style="cyan",
         )
     )
 
 
 def print_help():
-    """In help message."""
+    """Print the help panel."""
     console.print(
         Panel.fit(
-            "[bold]Các lệnh:[/bold]\n"
-            "/help   - Hiển thị help\n"
-            "/clear  - Xóa conversation history\n"
-            "/quit   - Thoát\n\n"
-            "[bold]Các tools:[/bold]\n"
-            "• read - Đọc file\n"
-            "• write - Ghi file\n"
-            "• edit - Chỉnh sửa file\n"
-            "• bash - Chạy lệnh shell\n"
-            "• grep - Tìm kiếm trong file\n"
-            "• glob - Tìm file theo pattern\n"
-            "• web_search - Tìm kiếm web\n"
-            "• web_fetch - Lấy nội dung từ URL",
+            "[bold]Commands:[/bold]\n"
+            "/help   - Show help\n"
+            "/clear  - Clear conversation history\n"
+            "/quit   - Exit\n\n"
+            "[bold]Tools:[/bold]\n"
+            "- read - Read files\n"
+            "- write - Write files\n"
+            "- edit - Edit files\n"
+            "- bash - Run shell commands\n"
+            "- grep - Search file contents\n"
+            "- glob - Find files by pattern\n"
+            "- web_search - Search the web\n"
+            "- web_fetch - Fetch URL content",
             border_style="green",
         )
     )
 
 
 def handle_thinking(response):
-    """In thinking blocks từ response (nếu có)."""
+    """Display thinking blocks from the response, if any."""
     for block in response.content:
         if block.type == "thinking":
             console.print(f"[dim italic]🤔 {block.thinking}[/dim italic]")
 
 
 def handle_tool_use(response) -> list[dict]:
-    """Xử lý tool use từ Claude response."""
+    """Execute tool calls from the response and collect results."""
     tool_results = []
 
     for block in response.content:
         if block.type == "tool_use":
-            # Hiển thị chi tiết input của tool
+            # Log tool input details
             if block.name == "run_bash":
                 cmd = block.input.get("command", "")
                 console.print(f"[dim]$ {cmd}[/dim]")
@@ -90,9 +91,7 @@ def handle_tool_use(response) -> list[dict]:
                 path = block.input.get("file_path", "")
                 console.print(f"[dim]✏️  Editing {path}[/dim]")
             else:
-                console.print(
-                    f"[dim]🔧 {block.name}({block.input})[/dim]"
-                )
+                console.print(f"[dim]🔧 {block.name}({block.input})[/dim]")
 
             try:
                 result = execute_tool(block.name, block.input)
@@ -111,21 +110,21 @@ def handle_tool_use(response) -> list[dict]:
 
 
 def handle_text_response(response):
-    """Xử lý text response từ Claude."""
+    """Render text blocks from the response as markdown."""
     for block in response.content:
         if block.type == "text":
             console.print(Markdown(block.text))
 
 
-def log_token_usage(response):
-    """Log token usage và cost."""
+def log_token_usage(response, status_code: int | None = None):
+    """Log token usage, estimated cost, and HTTP status code."""
     usage = response.usage
     input_tokens = usage.input_tokens
     output_tokens = usage.output_tokens
     cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
     cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
 
-    # Giá Claude Opus 4.6 (USD per 1M tokens)
+    # Claude Opus 4.6 pricing (USD per 1M tokens)
     # Input: $5, Output: $25, Cache write: $6.25, Cache read: $0.50
     input_cost = (input_tokens / 1_000_000) * 5.00
     output_cost = (output_tokens / 1_000_000) * 25.00
@@ -139,6 +138,8 @@ def log_token_usage(response):
     if cache_create or cache_read:
         parts.append(f"cache: {cache_create} write / {cache_read} read")
     parts.append(f"${total_cost:.4f}")
+    if status_code:
+        parts.append(f"HTTP {status_code}")
 
     console.print(f"[dim]📊 {' | '.join(parts)}[/dim]")
 
@@ -147,7 +148,7 @@ def chat_loop(client: ClaudeClient, context: Context):
     """Main chat loop."""
     tools = get_all_tools()
 
-    # Setup prompt session với IME support
+    # Set up prompt session with history and IME support
     session = PromptSession(
         history=FileHistory(os.path.expanduser("~/.ai_cli/history")),
         auto_suggest=AutoSuggestFromHistory(),
@@ -158,7 +159,7 @@ def chat_loop(client: ClaudeClient, context: Context):
         try:
             user_input = session.prompt("❯ ")
 
-            # Xử lý commands
+            # Handle slash commands
             if user_input.startswith("/"):
                 cmd = user_input.split()[0].lower()
                 if cmd == "/help":
@@ -166,58 +167,60 @@ def chat_loop(client: ClaudeClient, context: Context):
                     continue
                 elif cmd == "/clear":
                     context.clear()
-                    console.print("[success]Đã xóa conversation history[/success]")
+                    console.print("[success]Conversation history cleared[/success]")
                     continue
                 elif cmd in ["/quit", "/exit"]:
                     break
                 else:
-                    console.print(f"[error]Lệnh không hợp lệ: {cmd}[/error]")
+                    console.print(f"[error]Unknown command: {cmd}[/error]")
                     continue
 
             if not user_input.strip():
                 continue
 
-            # Thêm user message vào context
+            # Append user message to context
             context.add_user_message(user_input)
 
-            # Gọi API
+            # Call the API
             try:
-                response = client.send_message(
+                api_response = client.send_message(
                     messages=context.messages,
                     tools=tools,
                     system=context.system_prompt,
                 )
-                log_token_usage(response)
+                response = api_response.data
+                log_token_usage(response, api_response.status_code)
 
-                # Xử lý response
+                # Process tool-use loop
                 while response.stop_reason == "tool_use":
-                    # Hiển thị thinking trước khi chạy tool
+                    # Display thinking before running tools
                     handle_thinking(response)
 
-                    # Thêm assistant message (chứa tool_use)
+                    # Append assistant message (contains tool_use blocks)
                     context.add_assistant_message([c.model_dump() for c in response.content])
 
-                    # Execute tools
+                    # Execute requested tools
                     tool_results = handle_tool_use(response)
 
-                    # Thêm tool results
+                    # Append tool results to context
                     context.add_tool_results(tool_results)
 
-                    # Gọi lại API với kết quả
-                    response = client.send_message(
+                    # Send tool results back to the API
+                    api_response = client.send_message(
                         messages=context.messages,
                         tools=tools,
                         system=context.system_prompt,
                     )
-                    log_token_usage(response)
+                    response = api_response.data
+                    log_token_usage(response, api_response.status_code)
 
-                # Hiển thị thinking cuối cùng
+                # Display final thinking
                 handle_thinking(response)
 
-                # In text response
+                # Render text response
                 handle_text_response(response)
 
-                # Lưu assistant response vào context
+                # Save assistant response to context
                 context.add_assistant_message([c.model_dump() for c in response.content])
 
             except Exception as e:
@@ -227,7 +230,7 @@ def chat_loop(client: ClaudeClient, context: Context):
                 console.print(f"[dim]{traceback.format_exc()}[/dim]")
 
         except KeyboardInterrupt:
-            console.print("\n[dim]Ctrl+C - Gõ /quit để thoát[/dim]")
+            console.print("\n[dim]Ctrl+C — Type /quit to exit[/dim]")
             continue
         except EOFError:
             break
@@ -237,18 +240,19 @@ def chat_loop(client: ClaudeClient, context: Context):
 
 def main():
     """Entry point."""
+    load_dotenv()
     print_welcome()
 
-    # SDK tự đọc env vars: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY
+    # SDK reads env vars: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY
     try:
         client = ClaudeClient(
             base_url=os.getenv("ANTHROPIC_BASE_URL"),
             auth_token=os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY"),
         )
     except Exception as e:
-        console.print(f"[error]Không thể khởi tạo client: {e}[/error]")
+        console.print(f"[error]Failed to initialize client: {e}[/error]")
         console.print(
-            "[dim]Đặt ANTHROPIC_API_KEY hoặc ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL[/dim]"
+            "[dim]Set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL[/dim]"
         )
         sys.exit(1)
 

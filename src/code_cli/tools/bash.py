@@ -1,4 +1,4 @@
-"""Tool chạy shell commands."""
+"""Shell command execution tool."""
 
 import subprocess
 

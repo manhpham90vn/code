@@ -1,7 +1,9 @@
-"""Base class cho tools."""
+"""Base class for tools."""
 
 
 class Tool:
+    """Base class for all available tools."""
+
     name: str
     description: str
     input_schema: dict

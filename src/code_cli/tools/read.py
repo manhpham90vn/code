@@ -1,4 +1,4 @@
-"""Tool đọc file."""
+"""File reading tool."""
 
 import os
 

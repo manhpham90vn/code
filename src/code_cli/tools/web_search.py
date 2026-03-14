@@ -1,4 +1,4 @@
-"""Tool tìm kiếm web."""
+"""Web search tool."""
 
 from .base import Tool
 
@@ -14,7 +14,7 @@ class WebSearch(Tool):
 
     @classmethod
     def execute(cls, input_data: dict) -> str:
-        # Placeholder - cần tích hợp search API (Google, Bing, etc.)
+        # Placeholder — requires a search API integration (Google, Bing, SerpAPI, etc.)
         query = input_data["query"]
         return (
             f"Web search for '{query}' is not yet implemented. "

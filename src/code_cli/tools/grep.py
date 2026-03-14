@@ -1,4 +1,4 @@
-"""Tool tìm kiếm nội dung trong file."""
+"""File content search tool."""
 
 import subprocess
 
@@ -56,7 +56,7 @@ class Grep(Tool):
             output = result.stdout
             if not output:
                 return "No matches found."
-            # Giới hạn output
+            # Truncate large output
             lines = output.split("\n")
             if len(lines) > 50:
                 return "\n".join(lines[:50]) + f"\n... ({len(lines) - 50} more matches)"

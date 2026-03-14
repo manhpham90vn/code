@@ -1,4 +1,4 @@
-"""Tool chỉnh sửa file."""
+"""File editing tool."""
 
 import os
 
@@ -38,7 +38,7 @@ class EditFile(Tool):
         with open(file_path, encoding="utf-8") as f:
             content = f.read()
 
-        # Kiểm tra xem old_string có trong file không
+        # Verify old_string exists in the file
         if old_string not in content:
             return f"Error: String not found in file:\n{old_string[:100]}..."
 

@@ -1,4 +1,4 @@
-"""Tool lấy nội dung từ URL."""
+"""URL content fetching tool."""
 
 import urllib.request
 
@@ -29,7 +29,7 @@ class WebFetch(Tool):
             with urllib.request.urlopen(req, timeout=10) as response:
                 content = response.read().decode("utf-8", errors="ignore")
 
-            # Giới hạn kích thước
+            # Truncate large responses
             if len(content) > 50000:
                 return content[:50000] + "\n... (truncated)"
 

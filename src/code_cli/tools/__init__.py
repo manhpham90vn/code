@@ -1,4 +1,4 @@
-"""Tools cho AI CLI."""
+"""Tool registry and dispatcher."""
 
 from . import bash as bash_module
 from . import edit as edit_module
@@ -10,7 +10,7 @@ from . import web_search as web_search_module
 from . import write as write_module
 
 
-# Định nghĩa tất cả tools theo Anthropic schema
+# All tool definitions following the Anthropic tool-use schema
 def get_all_tools() -> list[dict]:
     return [
         read_module.get_tool_definition(),

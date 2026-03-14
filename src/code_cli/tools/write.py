@@ -1,4 +1,4 @@
-"""Tool ghi file."""
+"""File writing tool."""
 
 import os
 
@@ -24,7 +24,7 @@ class WriteFile(Tool):
         file_path = input_data["file_path"]
         content = input_data["content"]
 
-        # Tạo thư mục nếu chưa có
+        # Create parent directories if needed
         dir_path = os.path.dirname(file_path)
         if dir_path:
             os.makedirs(dir_path, exist_ok=True)

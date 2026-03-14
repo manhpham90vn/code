@@ -1,4 +1,4 @@
-"""Tool tìm file theo pattern."""
+"""File glob/pattern matching tool."""
 
 import glob as glob_module
 import os

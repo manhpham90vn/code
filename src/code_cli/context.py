@@ -1,11 +1,11 @@
-from __future__ import annotations
+"""Conversation context management."""
 
 from dataclasses import dataclass, field
 
 
 @dataclass
 class Context:
-    """Quản lý conversation history và project context."""
+    """Manages conversation history and project context."""
 
     messages: list[dict] = field(default_factory=list)
     system_prompt: str = (
