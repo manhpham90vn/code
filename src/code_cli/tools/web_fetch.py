@@ -7,6 +7,7 @@ from .base import Tool
 
 class WebFetch(Tool):
     name = "web_fetch"
+    read_only = True
     description = "Fetch content from a URL. Returns the page content as text."
     input_schema = {
         "type": "object",

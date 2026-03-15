@@ -5,6 +5,7 @@ from .base import Tool
 
 class WebSearch(Tool):
     name = "web_search"
+    read_only = True
     description = "Search the web for information. Returns search results with titles and URLs."
     input_schema = {
         "type": "object",

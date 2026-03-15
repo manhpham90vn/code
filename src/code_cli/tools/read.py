@@ -7,6 +7,7 @@ from .base import Tool
 
 class ReadFile(Tool):
     name = "read_file"
+    read_only = True
     description = (
         "Read a file from the local filesystem. "
         "Use this when you need to see the contents of a file."

@@ -15,7 +15,11 @@ from rich.theme import Theme
 
 from .client import ClaudeClient
 from .commands import get_command
+from .config import get_mcp_servers, load_config
 from .context import Context
+from .mcp import MCPManager, MCPServerConfig
+from .permissions import PermissionManager
+from .registry import discover_all, registry
 from .tools import execute_tool, get_all_tools
 
 # Terminal theme
@@ -44,32 +48,64 @@ def print_welcome():
     )
 
 
-def handle_tool_use(response) -> list[dict]:
+def handle_tool_use(
+    response,
+    mcp_manager: MCPManager | None = None,
+    permission_manager: PermissionManager | None = None,
+) -> list[dict]:
     """Execute tool calls from the response and collect results."""
     tool_results = []
 
     for block in response.content:
         if block.type == "tool_use":
-            # Log tool input details
-            if block.name == "run_bash":
-                cmd = block.input.get("command", "")
-                console.print(f"[dim]$ {cmd}[/dim]")
-            elif block.name == "read_file":
-                path = block.input.get("file_path", "")
-                console.print(f"[dim]📄 Reading {path}[/dim]")
-            elif block.name == "write_file":
-                path = block.input.get("file_path", "")
-                console.print(f"[dim]✏️  Writing {path}[/dim]")
-            elif block.name == "edit_file":
-                path = block.input.get("file_path", "")
-                console.print(f"[dim]✏️  Editing {path}[/dim]")
-            else:
-                console.print(f"[dim]🔧 {block.name}({block.input})[/dim]")
+            tool_name = block.name
 
-            try:
-                result = execute_tool(block.name, block.input)
-            except Exception as e:
-                result = f"Error: {str(e)}"
+            # Determine if tool is read-only
+            is_read_only = False
+            if not tool_name.startswith("mcp__"):
+                tool_class = registry.get_tool(tool_name)
+                if tool_class:
+                    is_read_only = getattr(tool_class, "read_only", False)
+
+            # Permission check
+            if permission_manager and not permission_manager.check(
+                tool_name, block.input, is_read_only, console
+            ):
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Tool execution denied by user.",
+                    }
+                )
+                continue
+
+            # Check if it's an MCP tool
+            if mcp_manager and tool_name.startswith("mcp__"):
+                console.print(f"[dim]🔧 MCP: {tool_name}({block.input})[/dim]")
+                result = mcp_manager.call_tool(tool_name, block.input)
+            else:
+                # Built-in tool
+                # Log tool input details
+                if tool_name == "run_bash":
+                    cmd = block.input.get("command", "")
+                    console.print(f"[dim]$ {cmd}[/dim]")
+                elif tool_name == "read_file":
+                    path = block.input.get("file_path", "")
+                    console.print(f"[dim]📄 Reading {path}[/dim]")
+                elif tool_name == "write_file":
+                    path = block.input.get("file_path", "")
+                    console.print(f"[dim]✏️  Writing {path}[/dim]")
+                elif tool_name == "edit_file":
+                    path = block.input.get("file_path", "")
+                    console.print(f"[dim]✏️  Editing {path}[/dim]")
+                else:
+                    console.print(f"[dim]🔧 {tool_name}({block.input})[/dim]")
+
+                try:
+                    result = execute_tool(tool_name, block.input)
+                except Exception as e:
+                    result = f"Error: {str(e)}"
 
             # Show tool output to user
             output = str(result).strip()
@@ -170,9 +206,18 @@ def stream_response(client, context, tools, max_retries: int = 3) -> object:
                 raise
 
 
-def chat_loop(client: ClaudeClient, context: Context):
+def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | None = None):
     """Main chat loop."""
+    # Get built-in tools
     tools = get_all_tools()
+
+    # Add MCP tools if available
+    if mcp_manager:
+        mcp_tools = mcp_manager.get_tools()
+        tools.extend(mcp_tools)
+
+    # Permission manager for tool confirmation
+    permissions = PermissionManager()
 
     # Set up prompt session with history and IME support
     session = PromptSession(
@@ -232,7 +277,7 @@ def chat_loop(client: ClaudeClient, context: Context):
                     context.add_assistant_message([c.model_dump() for c in response.content])
 
                     # Execute requested tools
-                    tool_results = handle_tool_use(response)
+                    tool_results = handle_tool_use(response, mcp_manager, permissions)
 
                     # Append tool results to context
                     context.add_tool_results(tool_results)
@@ -264,6 +309,29 @@ def main():
     load_dotenv()
     print_welcome()
 
+    # Initialize plugin system (auto-discovery)
+    discover_all()
+
+    # Initialize MCP servers from config
+    mcp_manager = None
+    config = load_config()
+    mcp_configs = get_mcp_servers(config)
+    if mcp_configs:
+        mcp_manager = MCPManager()
+        for name, server_config in mcp_configs.items():
+            try:
+                mcp_manager.add_server(MCPServerConfig(
+                    name=name,
+                    command=server_config.get("command", ""),
+                    args=server_config.get("args", []),
+                    env=server_config.get("env", {}),
+                ))
+                # Register in registry for help display
+                registry.register_mcp_server(name, server_config)
+                console.print(f"[dim]Started MCP server: {name}[/dim]")
+            except Exception as e:
+                console.print(f"[warning]Failed to start MCP server {name}: {e}[/warning]")
+
     # SDK reads env vars: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY
     try:
         client = ClaudeClient(
@@ -277,8 +345,12 @@ def main():
         )
         sys.exit(1)
 
-    context = Context()
-    chat_loop(client, context)
+    try:
+        context = Context()
+        chat_loop(client, context, mcp_manager)
+    finally:
+        if mcp_manager:
+            mcp_manager.stop_all()
 
 
 if __name__ == "__main__":

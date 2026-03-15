@@ -7,6 +7,7 @@ class Tool:
     name: str
     description: str
     input_schema: dict
+    read_only: bool = False  # Set to True for read-only tools that don't require confirmation
 
     @classmethod
     def get_tool_definition(cls) -> dict:

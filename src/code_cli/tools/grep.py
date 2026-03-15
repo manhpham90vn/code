@@ -7,6 +7,7 @@ from .base import Tool
 
 class Grep(Tool):
     name = "grep"
+    read_only = True
     description = (
         "Search for a pattern in files. Returns matching lines with file paths and line numbers."
     )

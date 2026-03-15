@@ -8,6 +8,7 @@ from .base import Tool
 
 class GlobFiles(Tool):
     name = "glob_files"
+    read_only = True
     description = "Find files matching a glob pattern. Use this to discover files in the project."
     input_schema = {
         "type": "object",
