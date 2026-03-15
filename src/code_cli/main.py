@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 import sys
 import time
+import traceback
 
+import httpx
 from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -136,20 +138,46 @@ def handle_tool_use(
     return tool_results
 
 
-def log_token_usage(response):
+# Model pricing (USD per 1M tokens)
+# Format: {model_prefix: (input, output, cache_write, cache_read)}
+MODEL_PRICING = {
+    "claude-opus-4": (5.00, 25.00, 6.25, 0.50),  # Opus 4
+    "claude-opus": (5.00, 25.00, 6.25, 0.50),  # Opus (any version)
+    "claude-sonnet-4": (1.50, 7.50, 1.88, 0.15),  # Sonnet 4
+    "claude-sonnet": (1.50, 7.50, 1.88, 0.15),  # Sonnet (any version)
+    "claude-haiku-3": (0.20, 1.00, 0.04, 0.01),  # Haiku 3
+    "claude-haiku": (0.20, 1.00, 0.04, 0.01),  # Haiku (any version)
+}
+
+
+def _get_model_pricing(model: str) -> tuple[float, float, float, float]:
+    """Get pricing for a model. Returns default pricing if model not found."""
+    model_lower = model.lower()
+    for prefix, pricing in MODEL_PRICING.items():
+        if prefix in model_lower:
+            return pricing
+    # Default to Opus pricing
+    return (5.00, 25.00, 6.25, 0.50)
+
+
+def log_token_usage(response, model: str | None = None):
     """Log token usage and estimated cost."""
+    # Default to claude-opus-4-6 if model not provided
+    if model is None:
+        model = "claude-opus-4-6"
+
     usage = response.usage
     input_tokens = usage.input_tokens
     output_tokens = usage.output_tokens
     cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
     cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
 
-    # Claude Opus 4.6 pricing (USD per 1M tokens)
-    # Input: $5, Output: $25, Cache write: $6.25, Cache read: $0.50
-    input_cost = (input_tokens / 1_000_000) * 5.00
-    output_cost = (output_tokens / 1_000_000) * 25.00
-    cache_write_cost = (cache_create / 1_000_000) * 6.25
-    cache_read_cost = (cache_read / 1_000_000) * 0.50
+    input_price, output_price, cache_write_price, cache_read_price = _get_model_pricing(model)
+
+    input_cost = (input_tokens / 1_000_000) * input_price
+    output_cost = (output_tokens / 1_000_000) * output_price
+    cache_write_cost = (cache_create / 1_000_000) * cache_write_price
+    cache_read_cost = (cache_read / 1_000_000) * cache_read_price
     total_cost = input_cost + output_cost + cache_write_cost + cache_read_cost
 
     parts = [
@@ -168,8 +196,6 @@ def stream_response(client, context, tools, max_retries: int = 3) -> object:
     Retries on transient connection errors (e.g. peer closed connection).
     Returns the final Message object for further processing (tool_use, etc.).
     """
-    import httpx
-
     for attempt in range(1, max_retries + 1):
         try:
             has_text = False
@@ -258,7 +284,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
                         context=context,
                         console=console,
                         stream_fn=stream_response,
-                        log_usage_fn=log_token_usage,
+                        log_usage_fn=lambda r: log_token_usage(r, client.model),
                     )
                     continue
 
@@ -282,7 +308,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
             # Call the API
             try:
                 response = stream_response(client, context, tools)
-                log_token_usage(response)
+                log_token_usage(response, client.model)
 
                 # Process tool-use loop
                 while response.stop_reason == "tool_use":
@@ -297,14 +323,12 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
 
                     # Send tool results back to the API
                     response = stream_response(client, context, tools)
-                    log_token_usage(response)
+                    log_token_usage(response, client.model)
 
                 # Save assistant response to context
                 context.add_assistant_message([c.model_dump() for c in response.content])
 
             except Exception as e:
-                import traceback
-
                 console.print(f"[error]Error: {escape(str(e))}[/error]")
                 console.print(f"[dim]{escape(traceback.format_exc())}[/dim]")
 

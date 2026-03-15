@@ -41,7 +41,12 @@ def run_pre_commit_checks(console: Console) -> tuple[bool, str]:
 
 def get_staged_diff() -> str:
     """Stage all changes and return the diff for AI to review."""
-    subprocess.run(["git", "add", "-A"], check=True, capture_output=True, text=True)
+    try:
+        subprocess.run(["git", "add", "-A"], check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to stage changes: {e.stderr}") from e
+    except FileNotFoundError as exc:
+        raise RuntimeError("git is not installed or not in PATH") from exc
 
     status = subprocess.run(
         ["git", "diff", "--cached", "--name-status"],

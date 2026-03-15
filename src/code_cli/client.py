@@ -1,21 +1,9 @@
-from dataclasses import dataclass
-from typing import Generic, TypeVar
+from __future__ import annotations
 
 import httpx
 from anthropic import Anthropic
 from anthropic.lib.streaming import MessageStream
 from anthropic.types import Message
-
-T = TypeVar("T")
-
-
-@dataclass
-class APIResponse(Generic[T]):
-    """API response wrapper containing parsed data and HTTP status code."""
-
-    data: T
-    status_code: int
-
 
 USER_AGENT = "claude-cli/1.0 (github.com/anthropic/claude-cli)"
 
@@ -54,8 +42,8 @@ class ClaudeClient:
         tools: list[dict],
         system: str | None = None,
         max_tokens: int = 4096,
-    ) -> APIResponse[Message]:
-        """Send a message and return the response with HTTP status code."""
+    ) -> Message:
+        """Send a message and return the parsed response."""
         # Build cacheable system prompt block
         sys_blocks = None
         if system:
@@ -75,16 +63,13 @@ class ClaudeClient:
                 "cache_control": {"type": "ephemeral"},
             }
 
-        # Use with_raw_response to access both status code and parsed body
-        raw = self.client.messages.with_raw_response.create(
+        return self.client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
             system=sys_blocks,
             messages=messages,
             tools=cached_tools,
         )
-
-        return APIResponse(data=raw.parse(), status_code=raw.status_code)
 
     def stream_message(
         self,

@@ -166,9 +166,6 @@ class MCPClient:
 
     def stop(self) -> None:
         """Stop the MCP server process."""
-        if self._stderr_thread:
-            self._stderr_thread.join(timeout=2)
-            self._stderr_thread = None
         if self._process:
             self._process.terminate()
             try:
@@ -179,6 +176,9 @@ class MCPClient:
             self._process = None
             self._initialized = False
             logger.info(f"Stopped MCP server: {self.config.name}")
+        if self._stderr_thread:
+            self._stderr_thread.join(timeout=2)
+            self._stderr_thread = None
 
     def _build_request(self, method: str, params: dict) -> dict:
         self._request_id += 1
@@ -230,9 +230,6 @@ class MCPClient:
             line = self._process.stdout.readline()
         except OSError as e:
             raise RuntimeError(f"Error reading from MCP server '{self.config.name}': {e}") from e
-        except OSError as e:
-            self._check_process_alive()
-            raise RuntimeError(f"OS error reading from MCP server '{self.config.name}': {e}") from e
 
         if not line:
             self._check_process_alive()  # Will raise with details

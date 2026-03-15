@@ -66,7 +66,7 @@ class PermissionManager:
         # Prompt
         while True:
             try:
-                answer = input("  Allow? (y)es / (n)o / (a)lways: ").strip().lower()
+                answer = console.input("  Allow? (y)es / (n)o / (a)lways: ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 console.print()
                 return False
