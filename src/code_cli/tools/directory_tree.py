@@ -29,7 +29,7 @@ class DirectoryTree(Tool):
             "exclude_patterns": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Directory names to exclude (default: .git, __pycache__, node_modules, .venv)",
+                "description": "Directories to exclude (default: .git, __pycache__, node_modules)",
             },
         },
         "required": ["path"],
@@ -52,7 +52,7 @@ class DirectoryTree(Tool):
 
         if len(lines) > 500:
             lines = lines[:500]
-            lines.append(f"... (truncated, tree too large)")
+            lines.append("... (truncated, tree too large)")
 
         return "\n".join(lines)
 

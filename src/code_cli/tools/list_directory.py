@@ -8,10 +8,7 @@ from .base import Tool
 class ListDirectory(Tool):
     name = "list_directory"
     read_only = True
-    description = (
-        "List the contents of a directory. "
-        "Returns entries prefixed with [FILE] or [DIR]."
-    )
+    description = "List the contents of a directory. Returns entries prefixed with [FILE] or [DIR]."
     input_schema = {
         "type": "object",
         "properties": {

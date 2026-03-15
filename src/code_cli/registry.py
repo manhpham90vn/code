@@ -97,11 +97,7 @@ def discover_commands() -> None:
             mod = importlib.import_module(f".commands.{module_name}", package="code_cli")
             for attr_name in dir(mod):
                 attr = getattr(mod, attr_name)
-                if (
-                    isinstance(attr, type)
-                    and issubclass(attr, Command)
-                    and attr is not Command
-                ):
+                if isinstance(attr, type) and issubclass(attr, Command) and attr is not Command:
                     cmd_instance = attr()
                     registry.register_command(cmd_instance)
                     logger.debug(f"Registered command: {cmd_instance.names}")
@@ -121,11 +117,7 @@ def discover_tools() -> None:
             mod = importlib.import_module(f".tools.{module_name}", package="code_cli")
             for attr_name in dir(mod):
                 attr = getattr(mod, attr_name)
-                if (
-                    isinstance(attr, type)
-                    and issubclass(attr, Tool)
-                    and attr is not Tool
-                ):
+                if isinstance(attr, type) and issubclass(attr, Tool) and attr is not Tool:
                     registry.register_tool(attr)
                     logger.debug(f"Registered tool: {attr.name}")
         except Exception as e:

@@ -26,9 +26,7 @@ class HelpCommand(Command):
     ) -> bool:
         # Build commands list
         commands = registry.get_all_commands()
-        cmd_lines = "\n".join(
-            f"  {', '.join(c.names):16s} {c.description}" for c in commands
-        )
+        cmd_lines = "\n".join(f"  {', '.join(c.names):16s} {c.description}" for c in commands)
 
         # Built-in commands
         builtin_cmds = "  /clear            Clear conversation history\n  /quit, /exit       Exit"

@@ -5,7 +5,6 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
-
 # Icons for tool display
 TOOL_ICONS = {
     "run_bash": "$",

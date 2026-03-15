@@ -7,5 +7,9 @@
         "@modelcontextprotocol/server-github"
       ]
     }
-  }
+  },
+  "pre_commit": [
+    "ruff check --fix .",
+    "ruff format ."
+  ]
 }

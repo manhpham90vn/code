@@ -60,6 +60,13 @@ def get_mcp_servers(config: dict[str, Any] | None = None) -> dict[str, dict]:
     return config.get("mcp_servers", {})
 
 
+def get_pre_commit_commands(config: dict[str, Any] | None = None) -> list[str]:
+    """Get pre-commit commands (lint, format, etc.) from config."""
+    if config is None:
+        config = load_config()
+    return config.get("pre_commit", [])
+
+
 def ensure_config_dir() -> Path:
     """Ensure the config directory exists in project root."""
     config_dir = Path(os.getcwd()) / CONFIG_DIR

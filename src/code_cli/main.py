@@ -50,6 +50,7 @@ def print_welcome():
 
 def handle_tool_use(
     response,
+    context: Context,
     mcp_manager: MCPManager | None = None,
     permission_manager: PermissionManager | None = None,
 ) -> list[dict]:
@@ -119,6 +120,10 @@ def handle_tool_use(
                     )
                 else:
                     console.print(f"[dim]{escape(output)}[/dim]")
+
+            # Store last output for $LAST_OUTPUT substitution
+            if output:
+                context.set_last_output(output)
 
             tool_results.append(
                 {
@@ -263,6 +268,14 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
             if not user_input.strip():
                 continue
 
+            # Prepend last_output to user input if it's set (e.g., after failed /commit)
+            if context.last_output:
+                user_input = (
+                    f"[Previous output]\n{context.last_output}\n\n[User request]\n{user_input}"
+                )
+                # Clear after using so it doesn't persist to next message
+                context.last_output = ""
+
             # Append user message to context
             context.add_user_message(user_input)
 
@@ -277,7 +290,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
                     context.add_assistant_message([c.model_dump() for c in response.content])
 
                     # Execute requested tools
-                    tool_results = handle_tool_use(response, mcp_manager, permissions)
+                    tool_results = handle_tool_use(response, context, mcp_manager, permissions)
 
                     # Append tool results to context
                     context.add_tool_results(tool_results)
@@ -320,12 +333,14 @@ def main():
         mcp_manager = MCPManager()
         for name, server_config in mcp_configs.items():
             try:
-                mcp_manager.add_server(MCPServerConfig(
-                    name=name,
-                    command=server_config.get("command", ""),
-                    args=server_config.get("args", []),
-                    env=server_config.get("env", {}),
-                ))
+                mcp_manager.add_server(
+                    MCPServerConfig(
+                        name=name,
+                        command=server_config.get("command", ""),
+                        args=server_config.get("args", []),
+                        env=server_config.get("env", {}),
+                    )
+                )
                 # Register in registry for help display
                 registry.register_mcp_server(name, server_config)
                 console.print(f"[dim]Started MCP server: {name}[/dim]")

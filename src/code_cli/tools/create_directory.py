@@ -7,9 +7,7 @@ from .base import Tool
 
 class CreateDirectory(Tool):
     name = "create_directory"
-    description = (
-        "Create a new directory. Creates parent directories if they don't exist."
-    )
+    description = "Create a new directory. Creates parent directories if they don't exist."
     input_schema = {
         "type": "object",
         "properties": {

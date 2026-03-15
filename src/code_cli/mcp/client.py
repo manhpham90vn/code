@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MCPServerConfig:
     """Configuration for an MCP server."""
+
     name: str
     command: str
     args: list[str] = field(default_factory=list)
@@ -79,9 +80,7 @@ class MCPClient:
 
         # Start background thread to drain stderr
         self._stderr_output.clear()
-        self._stderr_thread = threading.Thread(
-            target=self._read_stderr, daemon=True
-        )
+        self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
         self._stderr_thread.start()
 
         logger.info(f"Started MCP server: {self.config.name}")
@@ -90,14 +89,17 @@ class MCPClient:
         """Send MCP initialize request and return server capabilities."""
         self._check_process_alive()
 
-        request = self._build_request("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {
-                "name": "code-cli",
-                "version": "0.1.0",
+        request = self._build_request(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "code-cli",
+                    "version": "0.1.0",
+                },
             },
-        })
+        )
 
         response = self._send_request(request)
 
@@ -120,9 +122,7 @@ class MCPClient:
 
         # Handle error responses
         if "error" in response:
-            raise RuntimeError(
-                f"MCP server error listing tools: {response['error']}"
-            )
+            raise RuntimeError(f"MCP server error listing tools: {response['error']}")
 
         tools = response.get("result", {}).get("tools", [])
 
@@ -143,18 +143,19 @@ class MCPClient:
         if not self._initialized:
             self.initialize()
 
-        request = self._build_request("tools/call", {
-            "name": name,
-            "arguments": arguments,
-        })
+        request = self._build_request(
+            "tools/call",
+            {
+                "name": name,
+                "arguments": arguments,
+            },
+        )
 
         response = self._send_request(request)
 
         # Handle error responses
         if "error" in response:
-            raise RuntimeError(
-                f"MCP server error calling tool '{name}': {response['error']}"
-            )
+            raise RuntimeError(f"MCP server error calling tool '{name}': {response['error']}")
 
         result = response.get("result", {})
 
@@ -216,32 +217,22 @@ class MCPClient:
             self._process.stdin.flush()
         except BrokenPipeError as e:
             self._check_process_alive()  # Will raise with details
-            raise RuntimeError(
-                f"Failed to write to MCP server '{self.config.name}': {e}"
-            ) from e
+            raise RuntimeError(f"Failed to write to MCP server '{self.config.name}': {e}") from e
         except OSError as e:
             self._check_process_alive()  # Will raise with details
-            raise RuntimeError(
-                f"OS error writing to MCP server '{self.config.name}': {e}"
-            ) from e
+            raise RuntimeError(f"OS error writing to MCP server '{self.config.name}': {e}") from e
 
         # Read response with timeout using select
         try:
             ready, _, _ = select.select([self._process.stdout], [], [], timeout)
             if not ready:
-                raise TimeoutError(
-                    f"MCP server '{self.config.name}' timed out after {timeout}s"
-                )
+                raise TimeoutError(f"MCP server '{self.config.name}' timed out after {timeout}s")
             line = self._process.stdout.readline()
-        except select.error as e:
-            raise RuntimeError(
-                f"Error reading from MCP server '{self.config.name}': {e}"
-            ) from e
+        except OSError as e:
+            raise RuntimeError(f"Error reading from MCP server '{self.config.name}': {e}") from e
         except OSError as e:
             self._check_process_alive()
-            raise RuntimeError(
-                f"OS error reading from MCP server '{self.config.name}': {e}"
-            ) from e
+            raise RuntimeError(f"OS error reading from MCP server '{self.config.name}': {e}") from e
 
         if not line:
             self._check_process_alive()  # Will raise with details

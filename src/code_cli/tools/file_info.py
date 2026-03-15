@@ -11,8 +11,7 @@ class GetFileInfo(Tool):
     name = "get_file_info"
     read_only = True
     description = (
-        "Get detailed metadata about a file or directory: "
-        "size, timestamps, type, and permissions."
+        "Get detailed metadata about a file or directory: size, timestamps, type, and permissions."
     )
     input_schema = {
         "type": "object",

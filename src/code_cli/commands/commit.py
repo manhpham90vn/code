@@ -7,7 +7,36 @@ import subprocess
 from rich.console import Console
 from rich.markup import escape
 
+from code_cli.config import get_pre_commit_commands
+
 from .base import Command
+
+
+def run_pre_commit_checks(console: Console) -> tuple[bool, str]:
+    """Run pre-commit commands (lint, format, etc.).
+
+    Return (passed, output) — output contains error details on failure.
+    """
+    commands = get_pre_commit_commands()
+    if not commands:
+        return True, ""
+
+    for cmd in commands:
+        console.print(f"[dim]▶ {cmd}[/dim]")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            console.print(f"[error]✗ Failed: {cmd}[/error]")
+            output_parts = [f"Command failed: {cmd}"]
+            if result.stdout.strip():
+                console.print(f"[dim]{escape(result.stdout.strip())}[/dim]")
+                output_parts.append(result.stdout.strip())
+            if result.stderr.strip():
+                console.print(f"[error]{escape(result.stderr.strip())}[/error]")
+                output_parts.append(result.stderr.strip())
+            return False, "\n".join(output_parts)
+        console.print(f"[success]✓ {cmd}[/success]")
+
+    return True, ""
 
 
 def get_staged_diff() -> str:
@@ -59,6 +88,14 @@ class CommitCommand(Command):
         log_usage_fn=None,
     ) -> bool:
         try:
+            # Run lint/format checks first
+            passed, error_output = run_pre_commit_checks(console)
+            if not passed:
+                console.print("[error]Pre-commit checks failed. Commit aborted.[/error]")
+                # Store error output in context for "fix đi" to reference
+                context.last_output = error_output
+                return True
+
             diff = get_staged_diff()
             if not diff:
                 console.print("[warning]No changes to commit.[/warning]")
