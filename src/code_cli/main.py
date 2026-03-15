@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
+import time
 
 from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.theme import Theme
 
 from .client import ClaudeClient
+from .commands import get_command
 from .context import Context
 from .tools import execute_tool, get_all_tools
 
@@ -31,40 +32,6 @@ custom_theme = Theme(
 console = Console(theme=custom_theme)
 
 
-def get_staged_diff() -> str:
-    """Stage all changes and return the diff for AI to review."""
-    subprocess.run(["git", "add", "-A"], check=True, capture_output=True, text=True)
-
-    status = subprocess.run(
-        ["git", "diff", "--cached", "--name-status"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    if not status.stdout.strip():
-        return ""
-
-    stat = subprocess.run(
-        ["git", "diff", "--cached", "--stat"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    diff = subprocess.run(
-        ["git", "diff", "--cached"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    diff_text = diff.stdout
-    max_len = 8000
-    if len(diff_text) > max_len:
-        diff_text = diff_text[:max_len] + "\n... (truncated)"
-
-    return f"Staged files:\n{status.stdout}\nStats:\n{stat.stdout}\nDiff:\n{diff_text}"
-
-
 def print_welcome():
     """Print the welcome banner."""
     console.print(
@@ -73,29 +40,6 @@ def print_welcome():
             "Powered by Claude API\n\n"
             "[dim]Type /help to see available commands[/dim]",
             border_style="cyan",
-        )
-    )
-
-
-def print_help():
-    """Print the help panel."""
-    console.print(
-        Panel.fit(
-            "[bold]Commands:[/bold]\n"
-            "/help   - Show help\n"
-            "/clear  - Clear conversation history\n"
-            "/commit - AI-generated commit message\n"
-            "/quit   - Exit\n\n"
-            "[bold]Tools:[/bold]\n"
-            "- read - Read files\n"
-            "- write - Write files\n"
-            "- edit - Edit files\n"
-            "- bash - Run shell commands\n"
-            "- grep - Search file contents\n"
-            "- glob - Find files by pattern\n"
-            "- web_search - Search the web\n"
-            "- web_fetch - Fetch URL content",
-            border_style="green",
         )
     )
 
@@ -177,37 +121,53 @@ def log_token_usage(response):
     console.print(f"[dim]📊 {' | '.join(parts)}[/dim]")
 
 
-def stream_response(client, context, tools) -> object:
+def stream_response(client, context, tools, max_retries: int = 3) -> object:
     """Stream a response from Claude, displaying text and thinking in real-time.
 
+    Retries on transient connection errors (e.g. peer closed connection).
     Returns the final Message object for further processing (tool_use, etc.).
     """
-    has_text = False
-    in_thinking = False
-    with client.stream_message(
-        messages=context.messages,
-        tools=tools,
-        system=context.system_prompt,
-    ) as stream:
-        for event in stream:
-            if event.type == "thinking":
-                if not in_thinking:
-                    print("🤔 ", end="", flush=True)
-                    in_thinking = True
-                print(event.thinking, end="", flush=True)
-            elif event.type == "text":
+    import httpx
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            has_text = False
+            in_thinking = False
+            with client.stream_message(
+                messages=context.messages,
+                tools=tools,
+                system=context.system_prompt,
+            ) as stream:
+                for event in stream:
+                    if event.type == "thinking":
+                        if not in_thinking:
+                            print("🤔 ", end="", flush=True)
+                            in_thinking = True
+                        print(event.thinking, end="", flush=True)
+                    elif event.type == "text":
+                        if in_thinking:
+                            print()  # newline after thinking
+                            in_thinking = False
+                        print(event.text, end="", flush=True)
+                        has_text = True
+
                 if in_thinking:
-                    print()  # newline after thinking
-                    in_thinking = False
-                print(event.text, end="", flush=True)
-                has_text = True
+                    pass  # No closing tag needed
+                if has_text:
+                    print()  # newline after streamed text
 
-        if in_thinking:
-            pass  # No closing tag needed
-        if has_text:
-            print()  # newline after streamed text
+                return stream.get_final_message()
 
-        return stream.get_final_message()
+        except (httpx.RemoteProtocolError, httpx.ReadError, ConnectionError):
+            if attempt < max_retries:
+                wait = 2**attempt
+                console.print(
+                    f"\n[warning]⚠ Connection lost, retrying in {wait}s "
+                    f"(attempt {attempt}/{max_retries})...[/warning]"
+                )
+                time.sleep(wait)
+            else:
+                raise
 
 
 def chat_loop(client: ClaudeClient, context: Context):
@@ -227,70 +187,33 @@ def chat_loop(client: ClaudeClient, context: Context):
 
             # Handle slash commands
             if user_input.startswith("/"):
-                cmd = user_input.split()[0].lower()
-                if cmd == "/help":
-                    print_help()
-                    continue
-                elif cmd == "/clear":
+                parts = user_input.split(maxsplit=1)
+                cmd_name = parts[0].lower()
+                cmd_args = parts[1] if len(parts) > 1 else ""
+
+                # Handle special /clear and /quit inline
+                if cmd_name == "/clear":
                     context.clear()
                     console.print("[success]Conversation history cleared[/success]")
                     continue
-                elif cmd in ["/quit", "/exit"]:
+                elif cmd_name in ["/quit", "/exit"]:
                     break
-                elif cmd == "/commit":
-                    try:
-                        diff = get_staged_diff()
-                        if not diff:
-                            console.print("[warning]No changes to commit.[/warning]")
-                            continue
-                        console.print(f"[dim]{diff.split(chr(10))[0]}[/dim]")
-                        # Ask AI to generate commit message only (no tool call)
-                        user_input = (
-                            "Here is the git diff of staged changes:\n\n"
-                            f"{diff}\n\n"
-                            "Generate a single-line commit message in "
-                            "Conventional Commits format "
-                            "(e.g. feat(scope): ..., fix: ..., refactor: ...). "
-                            "Reply with ONLY the commit message, nothing else."
-                        )
-                        context.add_user_message(user_input)
-                        response = stream_response(client, context, [])
-                        log_token_usage(response)
 
-                        # Extract commit message from response
-                        commit_msg = ""
-                        for block in response.content:
-                            if hasattr(block, "text"):
-                                commit_msg = block.text.strip()
-                                break
-
-                        if not commit_msg:
-                            console.print("[error]Failed to generate commit message.[/error]")
-                            continue
-
-                        context.add_assistant_message([c.model_dump() for c in response.content])
-
-                        # Execute git commit
-                        result = subprocess.run(
-                            ["git", "commit", "-m", commit_msg],
-                            capture_output=True,
-                            text=True,
-                        )
-                        if result.returncode == 0:
-                            short_hash = subprocess.run(
-                                ["git", "rev-parse", "--short", "HEAD"],
-                                capture_output=True,
-                                text=True,
-                            ).stdout.strip()
-                            console.print(f"[success]✅ {short_hash} {commit_msg}[/success]")
-                        else:
-                            console.print(f"[error]{escape(result.stderr)}[/error]")
-                    except Exception as e:
-                        console.print(f"[error]Commit failed: {escape(str(e))}[/error]")
+                # Dispatch to registered commands
+                cmd = get_command(cmd_name.lstrip("/"))
+                if cmd:
+                    cmd.execute(
+                        cmd_args,
+                        client=client,
+                        context=context,
+                        console=console,
+                        stream_fn=stream_response,
+                        log_usage_fn=log_token_usage,
+                    )
                     continue
-                else:
-                    console.print(f"[error]Unknown command: {cmd}[/error]")
-                    continue
+
+                console.print(f"[error]Unknown command: {cmd_name}[/error]")
+                continue
 
             if not user_input.strip():
                 continue
