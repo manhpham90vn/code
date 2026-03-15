@@ -2,12 +2,13 @@
 
 import urllib.request
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class WebFetch(Tool):
-    name = "web_fetch"
+    name = ToolName.WEB_FETCH
     read_only = True
+    icon = "🌐"
     description = "Fetch content from a URL. Returns the page content as text."
     input_schema = {
         "type": "object",

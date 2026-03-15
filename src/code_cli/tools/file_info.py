@@ -4,12 +4,13 @@ import os
 import stat
 from datetime import datetime, timezone
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class GetFileInfo(Tool):
-    name = "get_file_info"
+    name = ToolName.GET_FILE_INFO
     read_only = True
+    icon = "ℹ️"
     description = (
         "Get detailed metadata about a file or directory: size, timestamps, type, and permissions."
     )

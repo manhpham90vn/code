@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.panel import Panel
 
-from ..registry import registry
+from ..plugin_system import get_all_commands, get_all_mcp_servers
 from ..tools import get_all_tools
 from .base import Command
 
@@ -25,7 +25,7 @@ class HelpCommand(Command):
         log_usage_fn=None,
     ) -> bool:
         # Build commands list
-        commands = registry.get_all_commands()
+        commands = get_all_commands()
         cmd_lines = "\n".join(f"  {', '.join(c.names):16s} {c.description}" for c in commands)
 
         # Built-in commands
@@ -36,7 +36,7 @@ class HelpCommand(Command):
         tool_lines = "\n".join(f"  {t['name']:16s} {t.get('description', '')[:60]}" for t in tools)
 
         # Build MCP info
-        mcp_servers = registry.get_all_mcp_servers()
+        mcp_servers = get_all_mcp_servers()
         mcp_lines = ""
         if mcp_servers:
             mcp_lines = "\n\n[bold]MCP Servers:[/bold]\n"

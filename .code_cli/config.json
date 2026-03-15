@@ -17,6 +17,7 @@
     "write_file",
     "edit_file",
     "mcp__github__search_users",
-    "mcp__github__get_file_contents"
+    "mcp__github__get_file_contents",
+    "run_bash"
   ]
 }

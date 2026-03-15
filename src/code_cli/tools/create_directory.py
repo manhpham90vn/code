@@ -2,11 +2,12 @@
 
 import os
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class CreateDirectory(Tool):
-    name = "create_directory"
+    name = ToolName.CREATE_DIRECTORY
+    icon = "📁"
     description = "Create a new directory. Creates parent directories if they don't exist."
     input_schema = {
         "type": "object",

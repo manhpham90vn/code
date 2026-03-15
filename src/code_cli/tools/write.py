@@ -2,11 +2,12 @@
 
 import os
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class WriteFile(Tool):
-    name = "write_file"
+    name = ToolName.WRITE_FILE
+    icon = "✏️"
     description = (
         "Write content to a file. Creates the file if it doesn't exist, overwrites if it does."
     )

@@ -3,12 +3,13 @@
 import glob as glob_module
 import os
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class GlobFiles(Tool):
-    name = "glob_files"
+    name = ToolName.GLOB_FILES
     read_only = True
+    icon = "🔍"
     description = "Find files matching a glob pattern. Use this to discover files in the project."
     input_schema = {
         "type": "object",

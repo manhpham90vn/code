@@ -21,8 +21,9 @@ from .commands import get_command
 from .config import get_mcp_servers, load_config
 from .context import Context
 from .mcp import MCPManager, MCPServerConfig
-from .permissions import PermissionManager
-from .registry import discover_all, registry
+from .models import DEFAULT_MODEL, calc_cost, log_token_usage
+from .permissions import PermissionManager, _format_tool_summary
+from .plugin_system import discover_all, get_tool, register_mcp_server
 from .tools import execute_tool, get_all_tools
 
 # Terminal theme
@@ -64,16 +65,19 @@ def handle_tool_use(
         if block.type == "tool_use":
             tool_name = block.name
 
-            # Determine if tool is read-only
+            # Resolve tool class for built-in tools
+            tool_class = None
             is_read_only = False
+            icon = "🔧"
             if not tool_name.startswith("mcp__"):
-                tool_class = registry.get_tool(tool_name)
+                tool_class = get_tool(tool_name)
                 if tool_class:
                     is_read_only = getattr(tool_class, "read_only", False)
+                    icon = getattr(tool_class, "icon", "🔧")
 
             # Permission check
             if permission_manager and not permission_manager.check(
-                tool_name, block.input, is_read_only, console
+                tool_name, block.input, is_read_only, console, icon=icon
             ):
                 tool_results.append(
                     {
@@ -85,26 +89,19 @@ def handle_tool_use(
                 continue
 
             # Check if it's an MCP tool
-            if mcp_manager and tool_name.startswith("mcp__"):
+            if tool_name.startswith("mcp__"):
                 console.print(f"[dim]🔧 MCP: {tool_name}({block.input})[/dim]")
-                result = mcp_manager.call_tool(tool_name, block.input)
-            else:
-                # Built-in tool
-                # Log tool input details
-                if tool_name == "run_bash":
-                    cmd = block.input.get("command", "")
-                    console.print(f"[dim]$ {cmd}[/dim]")
-                elif tool_name == "read_file":
-                    path = block.input.get("file_path", "")
-                    console.print(f"[dim]📄 Reading {path}[/dim]")
-                elif tool_name == "write_file":
-                    path = block.input.get("file_path", "")
-                    console.print(f"[dim]✏️  Writing {path}[/dim]")
-                elif tool_name == "edit_file":
-                    path = block.input.get("file_path", "")
-                    console.print(f"[dim]✏️  Editing {path}[/dim]")
+                if mcp_manager:
+                    result = mcp_manager.call_tool(tool_name, block.input)
                 else:
-                    console.print(f"[dim]🔧 {tool_name}({block.input})[/dim]")
+                    result = "MCP tool called but no MCP manager available"
+            else:
+                # Built-in tool - log with tool's icon
+                summary = _format_tool_summary(tool_name, block.input)
+                if summary:
+                    console.print(f"[dim]{icon} {summary}[/dim]")
+                else:
+                    console.print(f"[dim]{icon} {tool_name}[/dim]")
 
                 try:
                     result = execute_tool(tool_name, block.input)
@@ -137,78 +134,6 @@ def handle_tool_use(
             )
 
     return tool_results
-
-
-# Model pricing (USD per 1M tokens)
-# Format: {model_id: (input, output, cache_write, cache_read)}
-MODEL_PRICING = {
-    "claude-opus-4-6": (5.00, 25.00, 6.25, 0.50),
-    "claude-sonnet-4-6": (3.00, 15.00, 3.75, 0.30),
-}
-
-
-def _get_model_pricing(model: str) -> tuple[float, float, float, float]:
-    """Get pricing for a model. Returns default pricing if model not found."""
-    # Exact match first
-    if model in MODEL_PRICING:
-        return MODEL_PRICING[model]
-    # Default to Opus pricing
-    return (5.00, 25.00, 6.25, 0.50)
-
-
-def calc_cost(
-    input_tokens: int,
-    output_tokens: int,
-    cache_create: int,
-    cache_read: int,
-    model: str,
-) -> float:
-    """Calculate cost in USD for given token counts."""
-    input_price, output_price, cache_write_price, cache_read_price = _get_model_pricing(model)
-    return (
-        (input_tokens / 1_000_000) * input_price
-        + (output_tokens / 1_000_000) * output_price
-        + (cache_create / 1_000_000) * cache_write_price
-        + (cache_read / 1_000_000) * cache_read_price
-    )
-
-
-def log_token_usage(response, model: str | None = None, context: Context | None = None):
-    """Log token usage, estimated cost, and accumulate totals in context."""
-    if model is None:
-        model = "claude-opus-4-6"
-
-    usage = response.usage
-    input_tokens = usage.input_tokens
-    output_tokens = usage.output_tokens
-    cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
-    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
-
-    # Accumulate in context
-    if context:
-        context.add_usage(input_tokens, output_tokens, cache_create, cache_read)
-
-    req_cost = calc_cost(input_tokens, output_tokens, cache_create, cache_read, model)
-
-    parts = [
-        f"{input_tokens} in / {output_tokens} out",
-    ]
-    if cache_create or cache_read:
-        parts.append(f"cache: {cache_create} write / {cache_read} read")
-    parts.append(f"${req_cost:.4f}")
-
-    # Show running total
-    if context:
-        session_cost = calc_cost(
-            context.total_input_tokens,
-            context.total_output_tokens,
-            context.total_cache_create_tokens,
-            context.total_cache_read_tokens,
-            model,
-        )
-        parts.append(f"total: ${session_cost:.4f}")
-
-    console.print(f"[dim]📊 {' | '.join(parts)}[/dim]")
 
 
 def stream_response(client, context, tools, max_retries: int = 3) -> object:
@@ -314,7 +239,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
                         context=context,
                         console=console,
                         stream_fn=stream_response,
-                        log_usage_fn=lambda r: log_token_usage(r, client.model, context),
+                        log_usage_fn=lambda r: log_token_usage(r, client.model, context, console),
                     )
                     continue
 
@@ -338,7 +263,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
             # Call the API
             try:
                 response = stream_response(client, context, tools)
-                log_token_usage(response, client.model, context)
+                log_token_usage(response, client.model, context, console)
 
                 # Process tool-use loop
                 while response.stop_reason == "tool_use":
@@ -353,7 +278,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
 
                     # Send tool results back to the API
                     response = stream_response(client, context, tools)
-                    log_token_usage(response, client.model, context)
+                    log_token_usage(response, client.model, context, console)
 
                 # Save assistant response to context
                 context.add_assistant_message([c.model_dump() for c in response.content])
@@ -406,7 +331,7 @@ def main():
                     )
                 )
                 # Register in registry for help display
-                registry.register_mcp_server(name, server_config)
+                register_mcp_server(name, server_config)
                 console.print(f"[dim]Started MCP server: {name}[/dim]")
             except Exception as e:
                 console.print(f"[warning]Failed to start MCP server {name}: {e}[/warning]")
@@ -414,7 +339,7 @@ def main():
     # SDK reads env vars: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY
     try:
         client = ClaudeClient(
-            model=config.get("model", "claude-opus-4-6"),
+            model=config.get("model", DEFAULT_MODEL),
             base_url=os.getenv("ANTHROPIC_BASE_URL"),
             auth_token=os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY"),
         )

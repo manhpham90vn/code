@@ -2,14 +2,15 @@
 
 import os
 
-from .base import Tool
+from .base import Tool, ToolName
 
 DEFAULT_EXCLUDE = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tox"}
 
 
 class DirectoryTree(Tool):
-    name = "directory_tree"
+    name = ToolName.DIRECTORY_TREE
     read_only = True
+    icon = "🌲"
     description = (
         "Get a recursive tree view of a directory structure. "
         "Useful for understanding project layout."

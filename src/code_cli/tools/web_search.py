@@ -1,11 +1,12 @@
 """Web search tool."""
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class WebSearch(Tool):
-    name = "web_search"
+    name = ToolName.WEB_SEARCH
     read_only = True
+    icon = "🔍"
     description = "Search the web for information. Returns search results with titles and URLs."
     input_schema = {
         "type": "object",

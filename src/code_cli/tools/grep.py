@@ -2,12 +2,13 @@
 
 import subprocess
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class Grep(Tool):
-    name = "grep"
+    name = ToolName.GREP
     read_only = True
+    icon = "🔎"
     description = (
         "Search for a pattern in files. Returns matching lines with file paths and line numbers."
     )

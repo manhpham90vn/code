@@ -3,11 +3,12 @@
 import os
 import shutil
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class MoveFile(Tool):
-    name = "move_file"
+    name = ToolName.MOVE_FILE
+    icon = "📦"
     description = "Move or rename a file or directory."
     input_schema = {
         "type": "object",

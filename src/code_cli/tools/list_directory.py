@@ -2,12 +2,13 @@
 
 import os
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class ListDirectory(Tool):
-    name = "list_directory"
+    name = ToolName.LIST_DIRECTORY
     read_only = True
+    icon = "📂"
     description = "List the contents of a directory. Returns entries prefixed with [FILE] or [DIR]."
     input_schema = {
         "type": "object",

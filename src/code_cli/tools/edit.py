@@ -2,11 +2,12 @@
 
 import os
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class EditFile(Tool):
-    name = "edit_file"
+    name = ToolName.EDIT_FILE
+    icon = "✏️"
     description = (
         "Make exact string replacements in a file. Use this to modify specific parts of a file."
     )

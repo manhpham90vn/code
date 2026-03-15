@@ -2,12 +2,13 @@
 
 import os
 
-from .base import Tool
+from .base import Tool, ToolName
 
 
 class ReadFile(Tool):
-    name = "read_file"
+    name = ToolName.READ_FILE
     read_only = True
+    icon = "📄"
     description = (
         "Read a file from the local filesystem. "
         "Use this when you need to see the contents of a file."
