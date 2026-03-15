@@ -5,8 +5,6 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from rich.console import Console
-
 if TYPE_CHECKING:
     from .context import Context
 
@@ -73,9 +71,11 @@ def log_token_usage(
     response: object,
     model: str | None = None,
     context: Context | None = None,
-    console: Console | None = None,
-) -> None:
-    """Log token usage, estimated cost, and accumulate totals in context."""
+) -> str:
+    """Log token usage, estimated cost, and accumulate totals in context.
+
+    Returns the formatted usage message string.
+    """
     if model is None:
         model = DEFAULT_MODEL
 
@@ -109,5 +109,4 @@ def log_token_usage(
         )
         parts.append(f"total: ${session_cost:.4f}")
 
-    if console:
-        console.print(f"[dim]📊 {' | '.join(parts)}[/dim]")
+    return f"📊 {' | '.join(parts)}"

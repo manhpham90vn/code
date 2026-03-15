@@ -11,7 +11,6 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
 from rich.theme import Theme
@@ -20,6 +19,14 @@ from .client import ClaudeClient
 from .commands import get_command
 from .config import get_mcp_servers, load_config
 from .context import Context
+from .interfaces import (
+    InputBus,
+    OutputBus,
+    TelegramInput,
+    TerminalInput,
+    TerminalOutput,
+    create_telegram_interface,
+)
 from .mcp import MCPManager, MCPServerConfig
 from .models import DEFAULT_MODEL, calc_cost, log_token_usage
 from .permissions import PermissionManager, _format_tool_summary
@@ -55,8 +62,9 @@ def print_welcome() -> None:
 async def handle_tool_use(
     response,
     context: Context,
-    mcp_manager: MCPManager | None = None,
-    permission_manager: PermissionManager | None = None,
+    mcp_manager: MCPManager | None,
+    permissions: PermissionManager,
+    output: OutputBus,
 ) -> list[dict]:
     """Execute tool calls from the response and collect results."""
     tool_results: list[dict] = []
@@ -78,9 +86,8 @@ async def handle_tool_use(
                 icon = getattr(tool_class, "icon", "🔧")
 
         # Permission check
-        if permission_manager and not permission_manager.check(
-            tool_name, block.input, is_read_only, console, icon=icon
-        ):
+        if not permissions.check(tool_name, block.input, is_read_only, console, icon=icon):
+            await output.send_status(f"{icon} {tool_name} - denied")
             tool_results.append(
                 {
                     "type": "tool_result",
@@ -92,7 +99,7 @@ async def handle_tool_use(
 
         # Execute tool
         if tool_name.startswith("mcp__"):
-            console.print(f"[dim]🔧 MCP: {tool_name}({block.input})[/dim]")
+            await output.send_status(f"🔧 MCP: {tool_name}")
             if mcp_manager:
                 result = await mcp_manager.call_tool(tool_name, block.input)
             else:
@@ -100,33 +107,21 @@ async def handle_tool_use(
         else:
             # Built-in tool — show summary
             summary = _format_tool_summary(tool_name, block.input)
-            if summary:
-                console.print(f"[dim]{icon} {summary}[/dim]")
-            else:
-                console.print(f"[dim]{icon} {tool_name}[/dim]")
+            await output.send_tool_activity(icon, summary or tool_name)
 
             try:
-                # Run sync tool in thread to avoid blocking the event loop
                 result = await asyncio.to_thread(execute_tool, tool_name, block.input)
             except Exception as e:
                 result = f"Error: {e}"
 
-        # Show tool output to user
-        output = str(result).strip()
-        if output:
-            max_lines = 30
-            lines = output.split("\n")
-            if len(lines) > max_lines:
-                shown = "\n".join(lines[:max_lines])
-                console.print(
-                    f"[dim]{escape(shown)}\n... ({len(lines) - max_lines} more lines)[/dim]"
-                )
-            else:
-                console.print(f"[dim]{escape(output)}[/dim]")
+        # Show tool output
+        output_str = str(result).strip()
+        if output_str:
+            await output.send_tool_output(output_str)
 
         # Store last output for $LAST_OUTPUT substitution
-        if output:
-            context.set_last_output(output)
+        if output_str:
+            context.set_last_output(output_str)
 
         tool_results.append(
             {
@@ -143,23 +138,21 @@ async def stream_response_async(
     client: ClaudeClient,
     context: Context,
     tools: list[dict],
+    output: OutputBus,
     max_retries: int = 3,
 ) -> object:
-    """Stream a response from Claude, displaying text and thinking in real-time.
-
-    Runs the synchronous streaming call in a thread so the event loop stays free.
-    Retries on transient connection errors.
-    """
+    """Stream a response from Claude, displaying text and thinking in real-time."""
+    loop = asyncio.get_running_loop()
     for attempt in range(1, max_retries + 1):
         try:
-            # The actual streaming is sync (Anthropic SDK), run in thread
-            return await asyncio.to_thread(_stream_response_sync, client, context, tools)
+            return await asyncio.to_thread(
+                _stream_response_sync, client, context, tools, output, loop
+            )
         except (httpx.RemoteProtocolError, httpx.ReadError, ConnectionError):
             if attempt < max_retries:
                 wait = 2**attempt
-                console.print(
-                    f"\n[warning]⚠ Connection lost, retrying in {wait}s "
-                    f"(attempt {attempt}/{max_retries})...[/warning]"
+                await output.send_status(
+                    f"⚠ Connection lost, retrying in {wait}s (attempt {attempt}/{max_retries})..."
                 )
                 await asyncio.sleep(wait)
             else:
@@ -170,10 +163,14 @@ def _stream_response_sync(
     client: ClaudeClient,
     context: Context,
     tools: list[dict],
+    output: OutputBus,
+    loop: asyncio.AbstractEventLoop,
 ) -> object:
-    """Synchronous streaming helper — called from a thread."""
+    """Synchronous streaming helper."""
     collected_text = ""
+    collected_thinking = ""
     in_thinking = False
+
     with client.stream_message(
         messages=context.messages,
         tools=tools,
@@ -185,14 +182,21 @@ def _stream_response_sync(
                     print("🤔 ", end="", flush=True)
                     in_thinking = True
                 print(event.thinking, end="", flush=True)
+                collected_thinking += event.thinking
             elif event.type == "text":
                 if in_thinking:
-                    print()  # newline after thinking
+                    print()
                     in_thinking = False
                 collected_text += event.text
 
+        # Send collected thinking to non-terminal outputs (e.g. Telegram)
+        if collected_thinking:
+            asyncio.run_coroutine_threadsafe(output.send_thinking(collected_thinking), loop)
+
         if collected_text:
-            console.print(Markdown(collected_text))
+            # Send to output bus (both terminal and telegram)
+            # Schedule on the event loop from the thread
+            asyncio.run_coroutine_threadsafe(output.send_response(collected_text), loop)
 
         return stream.get_final_message()
 
@@ -200,9 +204,12 @@ def _stream_response_sync(
 async def chat_loop(
     client: ClaudeClient,
     context: Context,
-    mcp_manager: MCPManager | None = None,
+    mcp_manager: MCPManager | None,
+    input_queue: asyncio.Queue[tuple[str, str]],
+    output: OutputBus,
+    input_bus: InputBus,
 ) -> None:
-    """Main chat loop."""
+    """Main chat loop - reads from input_queue, writes to output."""
     # Get built-in tools
     tools = get_all_tools()
 
@@ -211,19 +218,16 @@ async def chat_loop(
         mcp_tools = await mcp_manager.get_tools()
         tools.extend(mcp_tools)
 
-    # Permission manager (singleton, cached config)
+    # Permission manager
     permissions = PermissionManager()
-
-    # Set up prompt session with history and IME support
-    session: PromptSession = PromptSession(
-        history=FileHistory(os.path.expanduser("~/.ai_cli/history")),
-        auto_suggest=AutoSuggestFromHistory(),
-        enable_open_in_editor=True,
-    )
 
     while True:
         try:
-            user_input: str = await session.prompt_async("❯ ")
+            # Read input from queue (could be from terminal or telegram)
+            source, user_input = await input_queue.get()
+
+            # Broadcast input to other interfaces
+            await input_bus.broadcast_input(source, user_input)
 
             # Handle slash commands
             if user_input.startswith("/"):
@@ -231,9 +235,7 @@ async def chat_loop(
                 cmd_name = parts[0].lower()
                 cmd_args = parts[1] if len(parts) > 1 else ""
 
-                # Handle special /clear and /quit inline
                 if cmd_name == "/clear":
-                    # Show total cost before clearing
                     session_cost = calc_cost(
                         context.total_input_tokens,
                         context.total_output_tokens,
@@ -242,9 +244,9 @@ async def chat_loop(
                         client.model,
                     )
                     if session_cost > 0:
-                        console.print(f"[dim]💰 Session cost: ${session_cost:.4f}[/dim]")
+                        await output.send_status(f"💰 Session cost: ${session_cost:.4f}")
                     context.clear()
-                    console.print("[success]Conversation history cleared[/success]")
+                    await output.send_status("Conversation cleared ✅")
                     continue
                 elif cmd_name in ("/quit", "/exit"):
                     break
@@ -257,18 +259,18 @@ async def chat_loop(
                         client=client,
                         context=context,
                         console=console,
-                        stream_fn=_stream_response_sync,
-                        log_usage_fn=lambda r: log_token_usage(r, client.model, context, console),
+                        stream_fn=lambda c, ctx, t: _stream_response_sync(c, ctx, t, output),
+                        log_usage_fn=lambda r: log_token_usage(r, client.model, context),
                     )
                     continue
 
-                console.print(f"[error]Unknown command: {cmd_name}[/error]")
+                await output.send_error(f"Unknown command: {cmd_name}")
                 continue
 
             if not user_input.strip():
                 continue
 
-            # Prepend last_output to user input if set (e.g., after failed /commit)
+            # Prepend last_output to user input if set
             if context.last_output:
                 user_input = (
                     f"[Previous output]\n{context.last_output}\n\n[User request]\n{user_input}"
@@ -280,38 +282,35 @@ async def chat_loop(
 
             # Call the API
             try:
-                response = await stream_response_async(client, context, tools)
-                log_token_usage(response, client.model, context, console)
+                response = await stream_response_async(client, context, tools, output)
+                msg = log_token_usage(response, client.model, context)
+                await output.send_status(msg)
 
                 # Process tool-use loop
                 while response.stop_reason == "tool_use":
-                    # Append assistant message (contains tool_use blocks)
                     context.add_assistant_message([c.model_dump() for c in response.content])
 
-                    # Execute requested tools
                     tool_results = await handle_tool_use(
-                        response, context, mcp_manager, permissions
+                        response, context, mcp_manager, permissions, output
                     )
 
-                    # Append tool results to context
                     context.add_tool_results(tool_results)
 
-                    # Send tool results back to the API
-                    response = await stream_response_async(client, context, tools)
-                    log_token_usage(response, client.model, context, console)
+                    response = await stream_response_async(client, context, tools, output)
+                    msg = log_token_usage(response, client.model, context)
+                    await output.send_status(msg)
 
-                # Save assistant response to context
+                # Save assistant response
                 context.add_assistant_message([c.model_dump() for c in response.content])
 
             except Exception as e:
-                console.print(f"[error]Error: {escape(str(e))}[/error]")
-                console.print(f"[dim]{escape(traceback.format_exc())}[/dim]")
+                await output.send_error(f"Error: {escape(str(e))}")
+                await output.send_status(escape(traceback.format_exc()))
 
-        except KeyboardInterrupt:
-            console.print("\n[dim]Ctrl+C — Type /quit to exit[/dim]")
-            continue
-        except EOFError:
+        except asyncio.CancelledError:
             break
+        except Exception as e:
+            await output.send_error(f"Error: {escape(str(e))}")
 
     # Show total cost on exit
     session_cost = calc_cost(
@@ -322,8 +321,8 @@ async def chat_loop(
         client.model,
     )
     if session_cost > 0:
-        console.print(f"[dim]💰 Session total: ${session_cost:.4f}[/dim]")
-    console.print("\n[success]Bye![/success]")
+        await output.send_status(f"💰 Session total: ${session_cost:.4f}")
+    await output.send_status("Bye!")
 
 
 def main() -> None:
@@ -335,10 +334,10 @@ def main() -> None:
 
 async def _main() -> None:
     """Async entry point."""
-    # Initialize plugin system (auto-discovery)
+    # Initialize plugin system
     discover_all()
 
-    # Initialize MCP servers from config
+    # Initialize MCP servers
     mcp_manager: MCPManager | None = None
     config = load_config()
     mcp_configs = get_mcp_servers(config)
@@ -359,7 +358,7 @@ async def _main() -> None:
             except Exception as e:
                 console.print(f"[warning]Failed to start MCP server {name}: {e}[/warning]")
 
-    # SDK reads env vars: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY
+    # Initialize Claude client
     try:
         client = ClaudeClient(
             model=config.get("model", DEFAULT_MODEL),
@@ -373,10 +372,46 @@ async def _main() -> None:
         )
         sys.exit(1)
 
+    # Setup interfaces
+    output = OutputBus()
+    input_bus = InputBus()
+    input_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+
+    # Terminal interface (always present)
+    terminal_output = TerminalOutput(console)
+    output.register(terminal_output)
+
+    # Setup terminal input
+    session: PromptSession = PromptSession(
+        history=FileHistory(os.path.expanduser("~/.ai_cli/history")),
+        auto_suggest=AutoSuggestFromHistory(),
+        enable_open_in_editor=True,
+    )
+    terminal_input = TerminalInput(session, console)
+    input_bus.register("terminal", terminal_input)
+
+    # Telegram interface (if configured)
+    tg_task: asyncio.Task | None = None
+    tg_input: TelegramInput | None = None
+    tg_data = await create_telegram_interface(input_queue)
+    if tg_data:
+        tg_output, tg_input, tg_task = tg_data
+        output.register(tg_output)
+        input_bus.register("telegram", tg_input)
+        console.print("[dim]🤖 Telegram enabled[/dim]")
+
+    # Start terminal input listener
+    terminal_task = asyncio.create_task(terminal_input.start(input_queue))
+
+    # Run chat loop
+    context = Context()
     try:
-        context = Context()
-        await chat_loop(client, context, mcp_manager)
+        await chat_loop(client, context, mcp_manager, input_queue, output, input_bus)
     finally:
+        terminal_input.stop()
+        terminal_task.cancel()
+        if tg_task:
+            tg_task.cancel()
         if mcp_manager:
             await mcp_manager.stop_all()
 
