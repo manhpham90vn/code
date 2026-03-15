@@ -139,23 +139,18 @@ def handle_tool_use(
 
 
 # Model pricing (USD per 1M tokens)
-# Format: {model_prefix: (input, output, cache_write, cache_read)}
+# Format: {model_id: (input, output, cache_write, cache_read)}
 MODEL_PRICING = {
-    "claude-opus-4": (5.00, 25.00, 6.25, 0.50),  # Opus 4
-    "claude-opus": (5.00, 25.00, 6.25, 0.50),  # Opus (any version)
-    "claude-sonnet-4": (1.50, 7.50, 1.88, 0.15),  # Sonnet 4
-    "claude-sonnet": (1.50, 7.50, 1.88, 0.15),  # Sonnet (any version)
-    "claude-haiku-3": (0.20, 1.00, 0.04, 0.01),  # Haiku 3
-    "claude-haiku": (0.20, 1.00, 0.04, 0.01),  # Haiku (any version)
+    "claude-opus-4-6": (5.00, 25.00, 6.25, 0.50),
+    "claude-sonnet-4-6": (3.00, 15.00, 3.75, 0.30),
 }
 
 
 def _get_model_pricing(model: str) -> tuple[float, float, float, float]:
     """Get pricing for a model. Returns default pricing if model not found."""
-    model_lower = model.lower()
-    for prefix, pricing in MODEL_PRICING.items():
-        if prefix in model_lower:
-            return pricing
+    # Exact match first
+    if model in MODEL_PRICING:
+        return MODEL_PRICING[model]
     # Default to Opus pricing
     return (5.00, 25.00, 6.25, 0.50)
 
