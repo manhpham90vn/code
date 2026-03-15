@@ -1,21 +1,22 @@
 """Directory tree tool."""
 
 import os
+from typing import ClassVar
 
 from .base import Tool
 
-DEFAULT_EXCLUDE = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tox"}
+DEFAULT_EXCLUDE: set[str] = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tox"}
 
 
 class DirectoryTree(Tool):
-    name = "directory_tree"
-    read_only = True
-    icon = "🌲"
-    description = (
+    name: ClassVar[str] = "directory_tree"
+    read_only: ClassVar[bool] = True
+    icon: ClassVar[str] = "🌲"
+    description: ClassVar[str] = (
         "Get a recursive tree view of a directory structure. "
         "Useful for understanding project layout."
     )
-    input_schema = {
+    input_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "path": {
@@ -38,9 +39,12 @@ class DirectoryTree(Tool):
 
     @classmethod
     def execute(cls, input_data: dict) -> str:
-        path = input_data["path"]
+        path = input_data.get("path", "")
         max_depth = input_data.get("max_depth", 4)
         exclude = set(input_data.get("exclude_patterns", [])) or DEFAULT_EXCLUDE
+
+        if not path or not isinstance(path, str):
+            return "Error: path must be a non-empty string"
 
         if not os.path.exists(path):
             return f"Error: Path not found: {path}"
@@ -48,7 +52,7 @@ class DirectoryTree(Tool):
         if not os.path.isdir(path):
             return f"Error: Not a directory: {path}"
 
-        lines = [os.path.basename(path) + "/"]
+        lines: list[str] = [os.path.basename(path) + "/"]
         cls._build_tree(path, "", lines, max_depth, 0, exclude)
 
         if len(lines) > 500:
@@ -58,7 +62,15 @@ class DirectoryTree(Tool):
         return "\n".join(lines)
 
     @classmethod
-    def _build_tree(cls, path, prefix, lines, max_depth, depth, exclude):
+    def _build_tree(
+        cls,
+        path: str,
+        prefix: str,
+        lines: list[str],
+        max_depth: int,
+        depth: int,
+        exclude: set[str],
+    ) -> None:
         if depth >= max_depth:
             return
 
@@ -69,10 +81,10 @@ class DirectoryTree(Tool):
             return
 
         # Filter excluded directories
-        entries = [e for e in entries if e not in exclude]
+        filtered_entries = [e for e in entries if e not in exclude]
 
-        for i, entry in enumerate(entries):
-            is_last = i == len(entries) - 1
+        for i, entry in enumerate(filtered_entries):
+            is_last = i == len(filtered_entries) - 1
             connector = "└── " if is_last else "├── "
             full_path = os.path.join(path, entry)
 
@@ -82,11 +94,3 @@ class DirectoryTree(Tool):
                 cls._build_tree(full_path, prefix + extension, lines, max_depth, depth + 1, exclude)
             else:
                 lines.append(f"{prefix}{connector}{entry}")
-
-
-def get_tool_definition():
-    return DirectoryTree.get_tool_definition()
-
-
-def execute(input_data: dict) -> str:
-    return DirectoryTree.execute(input_data)

@@ -26,7 +26,7 @@ class MCPServerConfig:
 class MCPManager:
     """Manages multiple MCP server connections using the official mcp SDK."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._sessions: dict[str, ClientSession] = {}
         self._exit_stack = AsyncExitStack()
 
@@ -38,20 +38,16 @@ class MCPManager:
             env={**os.environ, **config.env} if config.env else None,
         )
 
-        read, write = await self._exit_stack.enter_async_context(
-            stdio_client(params)
-        )
-        session = await self._exit_stack.enter_async_context(
-            ClientSession(read, write)
-        )
+        read, write = await self._exit_stack.enter_async_context(stdio_client(params))
+        session = await self._exit_stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
         self._sessions[config.name] = session
         logger.info(f"MCP server '{config.name}' initialized")
 
     async def get_tools(self) -> list[dict]:
         """Get combined tool list from all MCP servers, prefixed with server name."""
-        all_tools = []
-        failed_servers = []
+        all_tools: list[dict] = []
+        failed_servers: list[tuple[str, str]] = []
         for name, session in self._sessions.items():
             try:
                 result = await session.list_tools()
@@ -70,24 +66,24 @@ class MCPManager:
             logger.error(f"MCP server '{name}' failed: {err}")
         return all_tools
 
-    async def call_tool(self, full_name: str, arguments: dict) -> str | None:
+    async def call_tool(self, full_name: str, arguments: dict) -> str:
         """Call a tool, extracting server name from prefixed name."""
         if not full_name.startswith("mcp__"):
-            return None
+            return "Error: Not an MCP tool"
 
         parts = full_name.split("__", 2)
         if len(parts) < 3:
-            return None
+            return "Error: Invalid MCP tool name format"
 
         _, server_name, tool_name = parts
 
         if server_name not in self._sessions:
-            return f"Unknown MCP server: {server_name}"
+            return f"Error: Unknown MCP server: {server_name}"
 
         try:
             result = await self._sessions[server_name].call_tool(tool_name, arguments)
             # Format content blocks to string
-            parts_out = []
+            parts_out: list[str] = []
             for block in result.content:
                 if block.type == "text":
                     parts_out.append(block.text)

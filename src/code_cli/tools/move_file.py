@@ -2,15 +2,16 @@
 
 import os
 import shutil
+from typing import ClassVar
 
 from .base import Tool
 
 
 class MoveFile(Tool):
-    name = "move_file"
-    icon = "📦"
-    description = "Move or rename a file or directory."
-    input_schema = {
+    name: ClassVar[str] = "move_file"
+    icon: ClassVar[str] = "📦"
+    description: ClassVar[str] = "Move or rename a file or directory."
+    input_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "source": {
@@ -30,6 +31,12 @@ class MoveFile(Tool):
         source = input_data["source"]
         destination = input_data["destination"]
 
+        # Validate inputs
+        if not source or not isinstance(source, str):
+            return "Error: source must be a non-empty string"
+        if not destination or not isinstance(destination, str):
+            return "Error: destination must be a non-empty string"
+
         if not os.path.exists(source):
             return f"Error: Source not found: {source}"
 
@@ -44,13 +51,7 @@ class MoveFile(Tool):
         try:
             shutil.move(source, destination)
             return f"Moved {source} -> {destination}"
+        except PermissionError:
+            return "Error: Permission denied"
         except Exception as e:
             return f"Error: {str(e)}"
-
-
-def get_tool_definition():
-    return MoveFile.get_tool_definition()
-
-
-def execute(input_data: dict) -> str:
-    return MoveFile.execute(input_data)

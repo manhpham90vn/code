@@ -18,6 +18,7 @@
     "edit_file",
     "mcp__github__search_users",
     "mcp__github__get_file_contents",
-    "run_bash"
+    "run_bash",
+    "mcp__github__search_repositories"
   ]
 }

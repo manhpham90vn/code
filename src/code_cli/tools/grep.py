@@ -1,21 +1,26 @@
 """File content search tool."""
 
+import re
 import subprocess
+from typing import ClassVar
 
 from .base import Tool
 
 
 class Grep(Tool):
-    name = "grep"
-    read_only = True
-    icon = "🔎"
-    description = (
+    name: ClassVar[str] = "grep"
+    read_only: ClassVar[bool] = True
+    icon: ClassVar[str] = "🔎"
+    description: ClassVar[str] = (
         "Search for a pattern in files. Returns matching lines with file paths and line numbers."
     )
-    input_schema = {
+    input_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "The regex pattern to search for"},
+            "pattern": {
+                "type": "string",
+                "description": "The regex pattern to search for",
+            },
             "path": {
                 "type": "string",
                 "description": "Directory or file to search in (default: current directory)",
@@ -36,17 +41,30 @@ class Grep(Tool):
 
     @classmethod
     def execute(cls, input_data: dict) -> str:
-        pattern = input_data["pattern"]
+        pattern = input_data.get("pattern", "")
         path = input_data.get("path", ".")
         include = input_data.get("include")
         case_insensitive = input_data.get("case_insensitive", False)
+
+        # Validate pattern
+        if not pattern or not isinstance(pattern, str):
+            return "Error: pattern must be a non-empty string"
+
+        # Validate regex
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            return f"Error: Invalid regex pattern: {e}"
+
+        # Prevent directory traversal
+        path_val = path if isinstance(path, str) and ".." not in path else "."
 
         cmd = ["grep", "-rn"]
         if case_insensitive:
             cmd.append("-i")
         if include:
             cmd.extend(["--include", include])
-        cmd.extend([pattern, path])
+        cmd.extend([pattern, path_val])
 
         try:
             result = subprocess.run(
@@ -65,13 +83,7 @@ class Grep(Tool):
             return output
         except subprocess.TimeoutExpired:
             return "Error: Search timed out"
+        except FileNotFoundError:
+            return "Error: grep command not found"
         except Exception as e:
             return f"Error: {str(e)}"
-
-
-def get_tool_definition():
-    return Grep.get_tool_definition()
-
-
-def execute(input_data: dict) -> str:
-    return Grep.execute(input_data)

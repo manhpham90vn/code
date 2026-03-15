@@ -2,16 +2,19 @@
 
 import glob as glob_module
 import os
+from typing import ClassVar
 
 from .base import Tool
 
 
 class GlobFiles(Tool):
-    name = "glob_files"
-    read_only = True
-    icon = "🔍"
-    description = "Find files matching a glob pattern. Use this to discover files in the project."
-    input_schema = {
+    name: ClassVar[str] = "glob_files"
+    read_only: ClassVar[bool] = True
+    icon: ClassVar[str] = "🔍"
+    description: ClassVar[str] = (
+        "Find files matching a glob pattern. Use this to discover files in the project."
+    )
+    input_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "pattern": {
@@ -29,11 +32,21 @@ class GlobFiles(Tool):
 
     @classmethod
     def execute(cls, input_data: dict) -> str:
-        pattern = input_data["pattern"]
+        pattern = input_data.get("pattern", "")
         path = input_data.get("path", ".")
 
-        full_pattern = os.path.join(path, pattern)
-        matches = sorted(glob_module.glob(full_pattern, recursive=True))
+        if not pattern or not isinstance(pattern, str):
+            return "Error: pattern must be a non-empty string"
+
+        # Prevent directory traversal attacks
+        if ".." in pattern:
+            return "Error: '..' not allowed in pattern"
+
+        try:
+            full_pattern = os.path.join(path, pattern)
+            matches = sorted(glob_module.glob(full_pattern, recursive=True))
+        except OSError as e:
+            return f"Error: Invalid pattern: {e}"
 
         if not matches:
             return "No files found."
@@ -42,11 +55,3 @@ class GlobFiles(Tool):
             return "\n".join(matches[:100]) + f"\n... ({len(matches) - 100} more files)"
 
         return "\n".join(matches)
-
-
-def get_tool_definition():
-    return GlobFiles.get_tool_definition()
-
-
-def execute(input_data: dict) -> str:
-    return GlobFiles.execute(input_data)

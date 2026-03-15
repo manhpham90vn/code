@@ -1,18 +1,20 @@
 """Shell command execution tool."""
 
+import shlex
 import subprocess
+from typing import ClassVar
 
 from .base import Tool
 
 
 class RunBash(Tool):
-    name = "run_bash"
-    icon = "$"
-    description = (
+    name: ClassVar[str] = "run_bash"
+    icon: ClassVar[str] = "$"
+    description: ClassVar[str] = (
         "Execute a shell command and return its output. "
         "Use for system commands, git, package managers, etc."
     )
-    input_schema = {
+    input_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "The shell command to execute"},
@@ -30,10 +32,21 @@ class RunBash(Tool):
         command = input_data["command"]
         timeout = input_data.get("timeout", 30)
 
+        # Validate: ensure command is a non-empty string
+        if not command or not isinstance(command, str):
+            return "Error: Command must be a non-empty string"
+
+        # Security: use shlex.split to safely parse command
+        # This prevents shell injection while supporting pipes/redirection via shlex
+        try:
+            args = shlex.split(command)
+        except ValueError as e:
+            return f"Error: Invalid command syntax: {e}"
+
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -49,13 +62,9 @@ class RunBash(Tool):
             return output or "(no output)"
         except subprocess.TimeoutExpired:
             return f"Error: Command timed out after {timeout}s"
+        except FileNotFoundError:
+            return "Error: Command not found. Make sure the executable is in PATH."
+        except PermissionError:
+            return "Error: Permission denied to execute this command."
         except Exception as e:
             return f"Error: {str(e)}"
-
-
-def get_tool_definition():
-    return RunBash.get_tool_definition()
-
-
-def execute(input_data: dict) -> str:
-    return RunBash.execute(input_data)

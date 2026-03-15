@@ -24,24 +24,24 @@ class Model(str, Enum):
         return _MODEL_DESCRIPTIONS[self]
 
 
-_MODEL_DESCRIPTIONS = {
+_MODEL_DESCRIPTIONS: dict[Model, str] = {
     Model.OPUS: "Claude Opus 4.6 (most capable)",
     Model.SONNET: "Claude Sonnet 4.6 (balanced)",
 }
 
-
-
 # USD per 1M tokens: (input, output, cache_write, cache_read)
-MODEL_PRICING: dict[Model, tuple[float, float, float, float]] = {
+_Pricing = tuple[float, float, float, float]
+
+MODEL_PRICING: dict[Model, _Pricing] = {
     Model.OPUS: (5.00, 25.00, 6.25, 0.50),
     Model.SONNET: (3.00, 15.00, 3.75, 0.30),
 }
 
 # Fallback pricing when model not found
-_DEFAULT_PRICING = MODEL_PRICING[Model.OPUS]
+_DEFAULT_PRICING: _Pricing = MODEL_PRICING[Model.OPUS]
 
 
-def get_model_pricing(model: str) -> tuple[float, float, float, float]:
+def get_model_pricing(model: str) -> _Pricing:
     """Get pricing for a model. Falls back to Opus pricing if not found."""
     match model:
         case Model.OPUS:
@@ -70,7 +70,7 @@ def calc_cost(
 
 
 def log_token_usage(
-    response,
+    response: object,
     model: str | None = None,
     context: Context | None = None,
     console: Console | None = None,
@@ -79,11 +79,11 @@ def log_token_usage(
     if model is None:
         model = DEFAULT_MODEL
 
-    usage = response.usage
-    input_tokens = usage.input_tokens
-    output_tokens = usage.output_tokens
-    cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
-    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    usage = response.usage  # type: ignore[attr-defined]
+    input_tokens: int = usage.input_tokens
+    output_tokens: int = usage.output_tokens
+    cache_create: int = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    cache_read: int = getattr(usage, "cache_read_input_tokens", 0) or 0
 
     # Accumulate in context
     if context:
@@ -91,7 +91,7 @@ def log_token_usage(
 
     req_cost = calc_cost(input_tokens, output_tokens, cache_create, cache_read, model)
 
-    parts = [
+    parts: list[str] = [
         f"{input_tokens} in / {output_tokens} out",
     ]
     if cache_create or cache_read:

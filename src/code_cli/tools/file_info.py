@@ -3,18 +3,19 @@
 import os
 import stat
 from datetime import datetime, timezone
+from typing import ClassVar
 
 from .base import Tool
 
 
 class GetFileInfo(Tool):
-    name = "get_file_info"
-    read_only = True
-    icon = "ℹ️"
-    description = (
+    name: ClassVar[str] = "get_file_info"
+    read_only: ClassVar[bool] = True
+    icon: ClassVar[str] = "ℹ️"
+    description: ClassVar[str] = (
         "Get detailed metadata about a file or directory: size, timestamps, type, and permissions."
     )
-    input_schema = {
+    input_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "path": {
@@ -27,7 +28,10 @@ class GetFileInfo(Tool):
 
     @classmethod
     def execute(cls, input_data: dict) -> str:
-        path = input_data["path"]
+        path = input_data.get("path", "")
+
+        if not path or not isinstance(path, str):
+            return "Error: path must be a non-empty string"
 
         if not os.path.exists(path):
             return f"Error: Path not found: {path}"
@@ -64,11 +68,3 @@ class GetFileInfo(Tool):
             f"Created: {created}\n"
             f"Accessed: {accessed}"
         )
-
-
-def get_tool_definition():
-    return GetFileInfo.get_tool_definition()
-
-
-def execute(input_data: dict) -> str:
-    return GetFileInfo.execute(input_data)

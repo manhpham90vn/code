@@ -13,16 +13,31 @@ logger = logging.getLogger(__name__)
 CONFIG_DIR = ".code_cli"
 CONFIG_FILE = "config.json"
 
+# Environment variable to override config path
+CONFIG_ENV_VAR = "CODE_CLI_CONFIG"
+
 
 def get_config_path() -> Path:
-    """Get config path in project root (current working directory)."""
+    """Get config path.
+
+    Priority:
+    1. CODE_CLI_CONFIG environment variable (full path)
+    2. ./.code_cli/config.json (relative to cwd)
+    """
+    # Check env var first
+    env_path = os.getenv(CONFIG_ENV_VAR)
+    if env_path:
+        return Path(env_path)
+
+    # Default: relative to current working directory
     return Path(os.getcwd()) / CONFIG_DIR / CONFIG_FILE
 
 
 def load_config(config_path: Path | None = None) -> dict[str, Any]:
-    """Load configuration from JSON file in project root.
+    """Load configuration from JSON file.
 
     Default location: ./.code_cli/config.json (relative to where CLI is run)
+    Can be overridden via CODE_CLI_CONFIG environment variable.
 
     Example config:
     {

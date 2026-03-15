@@ -1,16 +1,19 @@
 """List directory contents tool."""
 
 import os
+from typing import ClassVar
 
 from .base import Tool
 
 
 class ListDirectory(Tool):
-    name = "list_directory"
-    read_only = True
-    icon = "📂"
-    description = "List the contents of a directory. Returns entries prefixed with [FILE] or [DIR]."
-    input_schema = {
+    name: ClassVar[str] = "list_directory"
+    read_only: ClassVar[bool] = True
+    icon: ClassVar[str] = "📂"
+    description: ClassVar[str] = (
+        "List the contents of a directory. Returns entries prefixed with [FILE] or [DIR]."
+    )
+    input_schema: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "path": {
@@ -23,7 +26,10 @@ class ListDirectory(Tool):
 
     @classmethod
     def execute(cls, input_data: dict) -> str:
-        path = input_data["path"]
+        path = input_data.get("path", "")
+
+        if not path or not isinstance(path, str):
+            return "Error: path must be a non-empty string"
 
         if not os.path.exists(path):
             return f"Error: Path not found: {path}"
@@ -39,18 +45,10 @@ class ListDirectory(Tool):
         if not entries:
             return "(empty directory)"
 
-        lines = []
+        lines: list[str] = []
         for entry in entries:
             full_path = os.path.join(path, entry)
             prefix = "[DIR]" if os.path.isdir(full_path) else "[FILE]"
             lines.append(f"{prefix} {entry}")
 
         return "\n".join(lines)
-
-
-def get_tool_definition():
-    return ListDirectory.get_tool_definition()
-
-
-def execute(input_data: dict) -> str:
-    return ListDirectory.execute(input_data)

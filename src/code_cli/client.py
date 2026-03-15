@@ -1,3 +1,5 @@
+"""Claude API client."""
+
 from __future__ import annotations
 
 import httpx
@@ -8,13 +10,13 @@ from anthropic.types import Message
 USER_AGENT = "claude-cli/1.0 (github.com/anthropic/claude-cli)"
 
 
-def _override_user_agent(request: httpx.Request):
+def _override_user_agent(request: httpx.Request) -> None:
     """Override the default SDK user-agent (some proxies block it)."""
     request.headers["user-agent"] = USER_AGENT
 
 
 class ClaudeClient:
-    """Claude API client."""
+    """Claude API client wrapper."""
 
     def __init__(
         self,
@@ -22,9 +24,9 @@ class ClaudeClient:
         base_url: str | None = None,
         auth_token: str | None = None,
         api_key: str | None = None,
-    ):
+    ) -> None:
         # Explicit params override env vars; omitted ones fall back to SDK defaults
-        kwargs = {}
+        kwargs: dict = {}
         if base_url:
             kwargs["base_url"] = base_url
         if auth_token:
@@ -45,7 +47,7 @@ class ClaudeClient:
     ) -> Message:
         """Send a message and return the parsed response."""
         # Build cacheable system prompt block
-        sys_blocks = None
+        sys_blocks: list[dict] | None = None
         if system:
             sys_blocks = [
                 {
@@ -87,7 +89,7 @@ class ClaudeClient:
                         print(event.text, end="", flush=True)
                 response = stream.get_final_message()
         """
-        sys_blocks = None
+        sys_blocks: list[dict] | None = None
         if system:
             sys_blocks = [
                 {
