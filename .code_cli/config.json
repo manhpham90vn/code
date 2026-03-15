@@ -11,5 +11,12 @@
   "pre_commit": [
     "ruff check --fix .",
     "ruff format ."
+  ],
+  "allowed_tools": [
+    "create_directory",
+    "write_file",
+    "edit_file",
+    "mcp__github__search_users",
+    "mcp__github__get_file_contents"
   ]
 }

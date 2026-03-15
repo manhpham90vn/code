@@ -5,6 +5,8 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
+from .config import load_config, save_config
+
 # Icons for tool display
 TOOL_ICONS = {
     "run_bash": "$",
@@ -37,7 +39,8 @@ class PermissionManager:
     """Session-level tool permission manager."""
 
     def __init__(self):
-        self._always_allowed: set[str] = set()
+        config = load_config()
+        self._always_allowed: set[str] = set(config.get("allowed_tools", []))
 
     def check(
         self,
@@ -75,6 +78,13 @@ class PermissionManager:
                 return True
             if answer in ("a", "always"):
                 self._always_allowed.add(tool_name)
+                # Save to config
+                config = load_config()
+                config.setdefault("allowed_tools", [])
+                if tool_name not in config["allowed_tools"]:
+                    config["allowed_tools"].append(tool_name)
+                    save_config({"allowed_tools": config["allowed_tools"]})
+                    console.print("  [dim]Saved to .code_cli/config.json[/dim]")
                 return True
             if answer in ("n", "no"):
                 return False

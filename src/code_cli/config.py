@@ -72,3 +72,14 @@ def ensure_config_dir() -> Path:
     config_dir = Path(os.getcwd()) / CONFIG_DIR
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
+
+
+def save_config(updates: dict[str, Any], config_path: Path | None = None) -> None:
+    """Merge updates into the config file and save."""
+    path = config_path or get_config_path()
+    ensure_config_dir()
+    config = load_config(path)
+    config.update(updates)
+    with open(path, "w") as f:
+        json.dump(config, f, indent=2)
+    logger.info(f"Saved config to {path}")

@@ -11,6 +11,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
 from rich.theme import Theme
@@ -155,9 +156,25 @@ def _get_model_pricing(model: str) -> tuple[float, float, float, float]:
     return (5.00, 25.00, 6.25, 0.50)
 
 
-def log_token_usage(response, model: str | None = None):
-    """Log token usage and estimated cost."""
-    # Default to claude-opus-4-6 if model not provided
+def calc_cost(
+    input_tokens: int,
+    output_tokens: int,
+    cache_create: int,
+    cache_read: int,
+    model: str,
+) -> float:
+    """Calculate cost in USD for given token counts."""
+    input_price, output_price, cache_write_price, cache_read_price = _get_model_pricing(model)
+    return (
+        (input_tokens / 1_000_000) * input_price
+        + (output_tokens / 1_000_000) * output_price
+        + (cache_create / 1_000_000) * cache_write_price
+        + (cache_read / 1_000_000) * cache_read_price
+    )
+
+
+def log_token_usage(response, model: str | None = None, context: Context | None = None):
+    """Log token usage, estimated cost, and accumulate totals in context."""
     if model is None:
         model = "claude-opus-4-6"
 
@@ -167,20 +184,29 @@ def log_token_usage(response, model: str | None = None):
     cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
     cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
 
-    input_price, output_price, cache_write_price, cache_read_price = _get_model_pricing(model)
+    # Accumulate in context
+    if context:
+        context.add_usage(input_tokens, output_tokens, cache_create, cache_read)
 
-    input_cost = (input_tokens / 1_000_000) * input_price
-    output_cost = (output_tokens / 1_000_000) * output_price
-    cache_write_cost = (cache_create / 1_000_000) * cache_write_price
-    cache_read_cost = (cache_read / 1_000_000) * cache_read_price
-    total_cost = input_cost + output_cost + cache_write_cost + cache_read_cost
+    req_cost = calc_cost(input_tokens, output_tokens, cache_create, cache_read, model)
 
     parts = [
         f"{input_tokens} in / {output_tokens} out",
     ]
     if cache_create or cache_read:
         parts.append(f"cache: {cache_create} write / {cache_read} read")
-    parts.append(f"${total_cost:.4f}")
+    parts.append(f"${req_cost:.4f}")
+
+    # Show running total
+    if context:
+        session_cost = calc_cost(
+            context.total_input_tokens,
+            context.total_output_tokens,
+            context.total_cache_create_tokens,
+            context.total_cache_read_tokens,
+            model,
+        )
+        parts.append(f"total: ${session_cost:.4f}")
 
     console.print(f"[dim]📊 {' | '.join(parts)}[/dim]")
 
@@ -193,7 +219,7 @@ def stream_response(client, context, tools, max_retries: int = 3) -> object:
     """
     for attempt in range(1, max_retries + 1):
         try:
-            has_text = False
+            collected_text = ""
             in_thinking = False
             with client.stream_message(
                 messages=context.messages,
@@ -210,13 +236,12 @@ def stream_response(client, context, tools, max_retries: int = 3) -> object:
                         if in_thinking:
                             print()  # newline after thinking
                             in_thinking = False
-                        print(event.text, end="", flush=True)
-                        has_text = True
+                        collected_text += event.text
 
                 if in_thinking:
                     pass  # No closing tag needed
-                if has_text:
-                    print()  # newline after streamed text
+                if collected_text:
+                    console.print(Markdown(collected_text))
 
                 return stream.get_final_message()
 
@@ -264,6 +289,16 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
 
                 # Handle special /clear and /quit inline
                 if cmd_name == "/clear":
+                    # Show total cost before clearing
+                    session_cost = calc_cost(
+                        context.total_input_tokens,
+                        context.total_output_tokens,
+                        context.total_cache_create_tokens,
+                        context.total_cache_read_tokens,
+                        client.model,
+                    )
+                    if session_cost > 0:
+                        console.print(f"[dim]💰 Session cost: ${session_cost:.4f}[/dim]")
                     context.clear()
                     console.print("[success]Conversation history cleared[/success]")
                     continue
@@ -279,7 +314,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
                         context=context,
                         console=console,
                         stream_fn=stream_response,
-                        log_usage_fn=lambda r: log_token_usage(r, client.model),
+                        log_usage_fn=lambda r: log_token_usage(r, client.model, context),
                     )
                     continue
 
@@ -303,7 +338,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
             # Call the API
             try:
                 response = stream_response(client, context, tools)
-                log_token_usage(response, client.model)
+                log_token_usage(response, client.model, context)
 
                 # Process tool-use loop
                 while response.stop_reason == "tool_use":
@@ -318,7 +353,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
 
                     # Send tool results back to the API
                     response = stream_response(client, context, tools)
-                    log_token_usage(response, client.model)
+                    log_token_usage(response, client.model, context)
 
                 # Save assistant response to context
                 context.add_assistant_message([c.model_dump() for c in response.content])
@@ -333,6 +368,16 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
         except EOFError:
             break
 
+    # Show total cost on exit
+    session_cost = calc_cost(
+        context.total_input_tokens,
+        context.total_output_tokens,
+        context.total_cache_create_tokens,
+        context.total_cache_read_tokens,
+        client.model,
+    )
+    if session_cost > 0:
+        console.print(f"[dim]💰 Session total: ${session_cost:.4f}[/dim]")
     console.print("\n[success]Bye![/success]")
 
 
@@ -369,6 +414,7 @@ def main():
     # SDK reads env vars: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY
     try:
         client = ClaudeClient(
+            model=config.get("model", "claude-opus-4-6"),
             base_url=os.getenv("ANTHROPIC_BASE_URL"),
             auth_token=os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY"),
         )

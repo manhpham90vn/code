@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rich.console import Console
 
+from ..config import save_config
 from .base import Command
 
 AVAILABLE_MODELS = {
@@ -46,4 +47,16 @@ class ModelCommand(Command):
 
         client.model = model_id
         console.print(f"[success]Switched to {model_id}[/success]")
+
+        # Ask if user wants to persist this choice
+        try:
+            answer = console.input("  Save as default? (y)es / (a)lways / (n)o: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return True
+
+        if answer in ("y", "yes", "a", "always"):
+            save_config({"model": model_id})
+            console.print("  [dim]Saved to .code_cli/config.json[/dim]")
+
         return True
