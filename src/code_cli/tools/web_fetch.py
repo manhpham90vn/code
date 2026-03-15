@@ -2,11 +2,11 @@
 
 import urllib.request
 
-from .base import Tool, ToolName
+from .base import Tool
 
 
 class WebFetch(Tool):
-    name = ToolName.WEB_FETCH
+    name = "web_fetch"
     read_only = True
     icon = "🌐"
     description = "Fetch content from a URL. Returns the page content as text."

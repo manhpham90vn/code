@@ -2,11 +2,11 @@
 
 import subprocess
 
-from .base import Tool, ToolName
+from .base import Tool
 
 
 class RunBash(Tool):
-    name = ToolName.RUN_BASH
+    name = "run_bash"
     icon = "$"
     description = (
         "Execute a shell command and return its output. "

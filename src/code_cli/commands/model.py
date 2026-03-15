@@ -5,12 +5,8 @@ from __future__ import annotations
 from rich.console import Console
 
 from ..config import save_config
+from ..models import Model
 from .base import Command
-
-AVAILABLE_MODELS = {
-    "claude-opus-4-6": "Claude Opus 4.6 (most capable)",
-    "claude-sonnet-4-6": "Claude Sonnet 4.6 (balanced)",
-}
 
 
 class ModelCommand(Command):
@@ -31,18 +27,20 @@ class ModelCommand(Command):
             # Show current model
             console.print(f"[bold]Current model:[/bold] {client.model}")
             console.print("\n[bold]Available models:[/bold]")
-            for model_id, desc in AVAILABLE_MODELS.items():
-                marker = " ✓" if model_id == client.model else ""
-                console.print(f"  {model_id:20s} - {desc}{marker}")
+            for m in Model:
+                marker = " ✓" if m.value == client.model else ""
+                console.print(f"  {m.value:20s} - {m.description}{marker}")
             return True
 
         # Switch model
         model_id = args.strip().lower()
-        if model_id not in AVAILABLE_MODELS:
+        try:
+            Model(model_id)
+        except ValueError:
             console.print(f"[error]Unknown model: {model_id}[/error]")
             console.print("Available models:")
-            for mid in AVAILABLE_MODELS:
-                console.print(f"  {mid}")
+            for m in Model:
+                console.print(f"  {m.value}")
             return True
 
         client.model = model_id

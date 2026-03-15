@@ -6,21 +6,20 @@ from rich.console import Console
 from rich.markup import escape
 
 from .config import load_config, save_config
-from .tools.base import ToolName
 
 
 def _format_tool_summary(tool_name: str, tool_input: dict) -> str:
     """Format a one-line summary of what the tool will do."""
     match tool_name:
-        case ToolName.RUN_BASH:
+        case "run_bash":
             return tool_input.get("command", "")
-        case ToolName.WRITE_FILE | ToolName.EDIT_FILE:
+        case "write_file" | "edit_file":
             return tool_input.get("file_path", "")
-        case ToolName.MOVE_FILE:
+        case "move_file":
             src = tool_input.get("source", "")
             dst = tool_input.get("destination", "")
             return f"{src} -> {dst}"
-        case ToolName.CREATE_DIRECTORY:
+        case "create_directory":
             return tool_input.get("path", "")
         case _:
             return str(tool_input) if tool_input else ""

@@ -2,11 +2,11 @@
 
 import os
 
-from .base import Tool, ToolName
+from .base import Tool
 
 
 class ReadFile(Tool):
-    name = ToolName.READ_FILE
+    name = "read_file"
     read_only = True
     icon = "📄"
     description = (

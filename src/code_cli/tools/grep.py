@@ -2,11 +2,11 @@
 
 import subprocess
 
-from .base import Tool, ToolName
+from .base import Tool
 
 
 class Grep(Tool):
-    name = ToolName.GREP
+    name = "grep"
     read_only = True
     icon = "🔎"
     description = (

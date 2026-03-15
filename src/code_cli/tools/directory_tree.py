@@ -2,13 +2,13 @@
 
 import os
 
-from .base import Tool, ToolName
+from .base import Tool
 
 DEFAULT_EXCLUDE = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tox"}
 
 
 class DirectoryTree(Tool):
-    name = ToolName.DIRECTORY_TREE
+    name = "directory_tree"
     read_only = True
     icon = "🌲"
     description = (

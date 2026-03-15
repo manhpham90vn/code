@@ -4,11 +4,11 @@ import os
 import stat
 from datetime import datetime, timezone
 
-from .base import Tool, ToolName
+from .base import Tool
 
 
 class GetFileInfo(Tool):
-    name = ToolName.GET_FILE_INFO
+    name = "get_file_info"
     read_only = True
     icon = "ℹ️"
     description = (

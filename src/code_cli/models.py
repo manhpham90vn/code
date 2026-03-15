@@ -19,6 +19,17 @@ class Model(str, Enum):
     OPUS = "claude-opus-4-6"
     SONNET = "claude-sonnet-4-6"
 
+    @property
+    def description(self) -> str:
+        return _MODEL_DESCRIPTIONS[self]
+
+
+_MODEL_DESCRIPTIONS = {
+    Model.OPUS: "Claude Opus 4.6 (most capable)",
+    Model.SONNET: "Claude Sonnet 4.6 (balanced)",
+}
+
+
 
 # USD per 1M tokens: (input, output, cache_write, cache_read)
 MODEL_PRICING: dict[Model, tuple[float, float, float, float]] = {

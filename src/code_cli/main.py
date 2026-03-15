@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import time
@@ -52,7 +53,7 @@ def print_welcome():
     )
 
 
-def handle_tool_use(
+async def handle_tool_use(
     response,
     context: Context,
     mcp_manager: MCPManager | None = None,
@@ -92,7 +93,7 @@ def handle_tool_use(
             if tool_name.startswith("mcp__"):
                 console.print(f"[dim]🔧 MCP: {tool_name}({block.input})[/dim]")
                 if mcp_manager:
-                    result = mcp_manager.call_tool(tool_name, block.input)
+                    result = await mcp_manager.call_tool(tool_name, block.input)
                 else:
                     result = "MCP tool called but no MCP manager available"
             else:
@@ -182,14 +183,16 @@ def stream_response(client, context, tools, max_retries: int = 3) -> object:
                 raise
 
 
-def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | None = None):
+async def chat_loop(
+    client: ClaudeClient, context: Context, mcp_manager: MCPManager | None = None
+):
     """Main chat loop."""
     # Get built-in tools
     tools = get_all_tools()
 
     # Add MCP tools if available
     if mcp_manager:
-        mcp_tools = mcp_manager.get_tools()
+        mcp_tools = await mcp_manager.get_tools()
         tools.extend(mcp_tools)
 
     # Permission manager for tool confirmation
@@ -204,7 +207,7 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
 
     while True:
         try:
-            user_input = session.prompt("❯ ")
+            user_input = await session.prompt_async("❯ ")
 
             # Handle slash commands
             if user_input.startswith("/"):
@@ -271,7 +274,9 @@ def chat_loop(client: ClaudeClient, context: Context, mcp_manager: MCPManager | 
                     context.add_assistant_message([c.model_dump() for c in response.content])
 
                     # Execute requested tools
-                    tool_results = handle_tool_use(response, context, mcp_manager, permissions)
+                    tool_results = await handle_tool_use(
+                        response, context, mcp_manager, permissions
+                    )
 
                     # Append tool results to context
                     context.add_tool_results(tool_results)
@@ -310,7 +315,11 @@ def main():
     """Entry point."""
     load_dotenv()
     print_welcome()
+    asyncio.run(_main())
 
+
+async def _main():
+    """Async entry point."""
     # Initialize plugin system (auto-discovery)
     discover_all()
 
@@ -322,7 +331,7 @@ def main():
         mcp_manager = MCPManager()
         for name, server_config in mcp_configs.items():
             try:
-                mcp_manager.add_server(
+                await mcp_manager.add_server(
                     MCPServerConfig(
                         name=name,
                         command=server_config.get("command", ""),
@@ -352,10 +361,10 @@ def main():
 
     try:
         context = Context()
-        chat_loop(client, context, mcp_manager)
+        await chat_loop(client, context, mcp_manager)
     finally:
         if mcp_manager:
-            mcp_manager.stop_all()
+            await mcp_manager.stop_all()
 
 
 if __name__ == "__main__":
